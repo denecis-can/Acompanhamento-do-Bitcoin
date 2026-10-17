@@ -73,3 +73,27 @@ def test_demo_settings_use_separate_database():
     s = demo_settings(get_settings())
     assert s.database_path.name.endswith("_demo.db")
     assert s.fred_api_key == "demo" and s.sosovalue_api_key == "demo"
+
+
+@respx.mock
+async def test_alert_rule_paths_exist_in_summary():
+    """Cada `path` do config/alerts.toml aponta para um número real do /api/summary."""
+    from app.alerts.engine import get_path
+    from app.alerts.rules import load_rules
+    from app.config import BASE_DIR
+
+    settings = demo_settings(get_settings())
+    db = Database(":memory:")
+    await db.connect()
+    collectors = build_collectors(DemoHttpClient(), settings)
+    for c in collectors:
+        await run_collector(c, db)
+    s = await get_summary(db, collectors)
+    await db.close()
+
+    for name in ("alerts.toml", "alerts.example.toml"):
+        for r in load_rules(BASE_DIR / "config" / name):
+            if r.type in ("threshold", "band_change"):
+                assert isinstance(get_path(s, r.path), (int, float)), (name, r.id, r.path)
+            if r.per:
+                assert get_path(s, r.per), (name, r.id, r.per)

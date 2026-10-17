@@ -1,0 +1,123 @@
+# Regras de alerta ativas. Documentação de cada campo: config/alerts.example.toml.
+# Mudanças valem no próximo reinício. Segredos ficam só no .env.
+
+[defaults]
+cooldown = "4h"
+channels = ["telegram", "n8n"]
+
+# --- funding médio ponderado (% por ciclo de 8h) ---
+[[rules]]
+id = "funding-alto"
+name = "Funding médio ponderado alto"
+path = "derivatives.weighted_funding.rate_pct"
+op = ">"
+value = 0.05
+hysteresis = 0.01
+unit = "%"
+
+[[rules]]
+id = "funding-negativo"
+name = "Funding médio ponderado negativo"
+path = "derivatives.weighted_funding.rate_pct"
+op = "<"
+value = -0.02
+hysteresis = 0.01
+unit = "%"
+
+# --- volatilidade implícita ---
+[[rules]]
+id = "dvol-salto"
+name = "DVOL subiu forte em 24h"
+path = "volatility.dvol_change_24h"
+op = ">="
+value = 10
+hysteresis = 3
+unit = "pts"
+
+# --- ETFs: último dia liquidado (US$ mi) ---
+[[rules]]
+id = "etf-saida"
+name = "Saída forte dos ETFs de BTC"
+path = "etf.last_day.total"
+per = "etf.last_day.date"
+op = "<="
+value = -300
+unit = "US$ mi"
+
+[[rules]]
+id = "etf-entrada"
+name = "Entrada forte nos ETFs de BTC"
+path = "etf.last_day.total"
+per = "etf.last_day.date"
+op = ">="
+value = 500
+unit = "US$ mi"
+
+# --- preço: variação em 24h ---
+[[rules]]
+id = "preco-alta-24h"
+name = "Preço subiu 5% em 24h"
+path = "price.change_24h_pct"
+op = ">="
+value = 5
+hysteresis = 1
+unit = "%"
+
+[[rules]]
+id = "preco-queda-24h"
+name = "Preço caiu 5% em 24h"
+path = "price.change_24h_pct"
+op = "<="
+value = -5
+hysteresis = 1
+unit = "%"
+
+# --- open interest: variação em 24h ---
+[[rules]]
+id = "oi-alta-24h"
+name = "Open interest +10% em 24h"
+path = "derivatives.open_interest.change_24h_pct"
+op = ">="
+value = 10
+hysteresis = 2
+unit = "%"
+
+[[rules]]
+id = "oi-queda-24h"
+name = "Open interest −10% em 24h"
+path = "derivatives.open_interest.change_24h_pct"
+op = "<="
+value = -10
+hysteresis = 2
+unit = "%"
+
+# --- sentimento ---
+[[rules]]
+id = "fng-medo-extremo"
+name = "Fear & Greed em medo extremo"
+path = "sentiment.value"
+op = "<="
+value = 20
+hysteresis = 3
+
+[[rules]]
+id = "fng-ganancia-extrema"
+name = "Fear & Greed em ganância extrema"
+path = "sentiment.value"
+op = ">="
+value = 80
+hysteresis = 3
+
+# --- score de temperatura ---
+[[rules]]
+id = "regime-faixa"
+name = "Temperatura do mercado mudou de faixa"
+type = "band_change"
+hysteresis = 5
+
+# --- saúde dos coletores ---
+[[rules]]
+id = "saude-coletor"
+name = "Coletor falhando"
+type = "health"
+cycles = 3

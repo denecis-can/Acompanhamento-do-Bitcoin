@@ -32,6 +32,7 @@ def build_sources(latest: dict[str, dict], collectors: list[BaseCollector], now:
             "updated_at": _iso(entry["fetched_at"]) if entry else None,
             "last_attempt_at": _iso(entry["last_attempt"]) if entry else None,
             "error": entry["error"] if entry and not entry["ok"] else None,
+            "fail_streak": entry.get("fail_streak", 0) if entry else 0,
         }
     return out
 

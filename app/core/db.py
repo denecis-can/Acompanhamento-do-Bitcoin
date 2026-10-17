@@ -6,6 +6,10 @@
 - `candles`: OHLCV do par principal.
 - `etf_flows`: fluxo diário liquidado dos ETFs de BTC à vista (US$ mi), por ticker e
   "TOTAL". Acumula histórico além do último mês que a SoSoValue devolve.
+- `alert_state`: estado de cada regra de alerta (armada ou disparada, última faixa,
+  último disparo), para o antirruído sobreviver a reinícios.
+- `alert_events`: cada alerta disparado (enviado, suprimido ou com falha) e cada
+  resumo diário, com o payload e o resultado por canal.
 """
 
 from __future__ import annotations
@@ -24,7 +28,8 @@ CREATE TABLE IF NOT EXISTS latest (
     fetched_at    REAL,
     last_attempt  REAL NOT NULL,
     ok            INTEGER NOT NULL,
-    error         TEXT
+    error         TEXT,
+    fail_streak   INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS series (
     metric TEXT    NOT NULL,
@@ -51,7 +56,31 @@ CREATE TABLE IF NOT EXISTS etf_flows (
     updated_at REAL NOT NULL,
     PRIMARY KEY (date, ticker)
 );
+CREATE TABLE IF NOT EXISTS alert_state (
+    rule_key      TEXT PRIMARY KEY,
+    armed         INTEGER NOT NULL,
+    band          TEXT,
+    last_key      TEXT,
+    last_value    REAL,
+    last_fired_at REAL,
+    updated_at    REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alert_events (
+    id         TEXT PRIMARY KEY,
+    rule_key   TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    fired_at   REAL NOT NULL,
+    status     TEXT NOT NULL,
+    message    TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    deliveries TEXT NOT NULL,
+    attempts   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS alert_events_fired_at ON alert_events (fired_at);
 """
+
+# Colunas adicionadas depois da primeira versão do banco (ALTER TABLE idempotente).
+MIGRATIONS = ("ALTER TABLE latest ADD COLUMN fail_streak INTEGER NOT NULL DEFAULT 0",)
 
 # Fonte de maior precedência no histórico de ETFs: um dia vindo dela nunca é
 # sobrescrito por uma importação manual.
@@ -70,6 +99,11 @@ class Database:
         self._conn.row_factory = aiosqlite.Row
         await self._conn.execute("PRAGMA journal_mode=WAL")
         await self._conn.executescript(SCHEMA)
+        for sql in MIGRATIONS:
+            try:
+                await self._conn.execute(sql)
+            except aiosqlite.OperationalError:
+                pass  # coluna já existe
         await self._conn.commit()
 
     async def close(self) -> None:
@@ -89,11 +123,11 @@ class Database:
         at = at or time.time()
         await self.conn.execute(
             """
-            INSERT INTO latest (collector, data, fetched_at, last_attempt, ok, error)
-            VALUES (?, ?, ?, ?, 1, NULL)
+            INSERT INTO latest (collector, data, fetched_at, last_attempt, ok, error, fail_streak)
+            VALUES (?, ?, ?, ?, 1, NULL, 0)
             ON CONFLICT(collector) DO UPDATE SET
                 data = excluded.data, fetched_at = excluded.fetched_at,
-                last_attempt = excluded.last_attempt, ok = 1, error = NULL
+                last_attempt = excluded.last_attempt, ok = 1, error = NULL, fail_streak = 0
             """,
             (collector, json.dumps(data), at, at),
         )
@@ -103,10 +137,11 @@ class Database:
         at = at or time.time()
         await self.conn.execute(
             """
-            INSERT INTO latest (collector, data, fetched_at, last_attempt, ok, error)
-            VALUES (?, NULL, NULL, ?, 0, ?)
+            INSERT INTO latest (collector, data, fetched_at, last_attempt, ok, error, fail_streak)
+            VALUES (?, NULL, NULL, ?, 0, ?, 1)
             ON CONFLICT(collector) DO UPDATE SET
-                last_attempt = excluded.last_attempt, ok = 0, error = excluded.error
+                last_attempt = excluded.last_attempt, ok = 0, error = excluded.error,
+                fail_streak = latest.fail_streak + 1
             """,
             (collector, at, error[:500]),
         )
@@ -125,6 +160,7 @@ class Database:
                 "last_attempt": r["last_attempt"],
                 "ok": bool(r["ok"]),
                 "error": r["error"],
+                "fail_streak": r["fail_streak"],
             }
             for r in rows
         }
@@ -155,6 +191,69 @@ class Database:
             [(symbol, interval, *c) for c in candles],
         )
         await self.conn.commit()
+
+    # --- alertas ------------------------------------------------------------
+
+    async def get_alert_states(self) -> dict[str, dict[str, Any]]:
+        async with self.conn.execute("SELECT * FROM alert_state") as cur:
+            rows = await cur.fetchall()
+        return {r["rule_key"]: {k: r[k] for k in r.keys() if k != "rule_key"} for r in rows}
+
+    async def save_alert_state(self, rule_key: str, state: dict[str, Any]) -> None:
+        await self.conn.execute(
+            """
+            INSERT INTO alert_state (rule_key, armed, band, last_key, last_value, last_fired_at, updated_at)
+            VALUES (:rule_key, :armed, :band, :last_key, :last_value, :last_fired_at, :updated_at)
+            ON CONFLICT(rule_key) DO UPDATE SET
+                armed = excluded.armed, band = excluded.band, last_key = excluded.last_key,
+                last_value = excluded.last_value, last_fired_at = excluded.last_fired_at,
+                updated_at = excluded.updated_at
+            """,
+            {
+                "rule_key": rule_key,
+                "armed": int(bool(state.get("armed"))),
+                "band": state.get("band"),
+                "last_key": state.get("last_key"),
+                "last_value": state.get("last_value"),
+                "last_fired_at": state.get("last_fired_at"),
+                "updated_at": time.time(),
+            },
+        )
+        await self.conn.commit()
+
+    async def insert_alert_event(self, event: dict[str, Any]) -> None:
+        await self.conn.execute(
+            """INSERT INTO alert_events (id, rule_key, kind, fired_at, status, message, payload, deliveries, attempts)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event["id"], event["rule_key"], event["kind"], event["fired_at"], event["status"],
+                event["message"], json.dumps(event["payload"], ensure_ascii=False),
+                json.dumps(event["deliveries"]), event.get("attempts", 0),
+            ),
+        )
+        await self.conn.commit()
+
+    async def update_alert_delivery(self, event_id: str, status: str, deliveries: dict[str, str], attempts: int) -> None:
+        await self.conn.execute(
+            "UPDATE alert_events SET status = ?, deliveries = ?, attempts = ? WHERE id = ?",
+            (status, json.dumps(deliveries), attempts, event_id),
+        )
+        await self.conn.commit()
+
+    async def get_alert_events(self, since_ts: float, status: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM alert_events WHERE fired_at >= ?"
+        args: list[Any] = [since_ts]
+        if status:
+            sql += " AND status = ?"
+            args.append(status)
+        sql += " ORDER BY fired_at DESC LIMIT ?"
+        args.append(limit)
+        async with self.conn.execute(sql, args) as cur:
+            rows = await cur.fetchall()
+        return [
+            {**dict(r), "payload": json.loads(r["payload"]), "deliveries": json.loads(r["deliveries"])}
+            for r in rows
+        ]
 
     # --- etf_flows --------------------------------------------------------
 

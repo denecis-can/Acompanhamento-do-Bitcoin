@@ -1,0 +1,164 @@
+# =============================================================================
+# Regras de alerta do BTC Dashboard — exemplo comentado
+#
+# O arquivo usado de verdade é config/alerts.toml (ou o caminho em ALERTS_FILE no .env).
+# Edite à mão; as mudanças valem no próximo reinício do servidor. Este arquivo não tem
+# segredos: token do Telegram, chat_id e URL do n8n ficam só no .env.
+#
+# Antirruído, sempre ativo:
+#   - dispara só ao CRUZAR o limite, nunca a cada leitura além dele;
+#   - depois de disparar, só rearma quando o valor volta além do limite com folga
+#     ("hysteresis"), para um valor oscilando em cima do limite não gerar rajadas;
+#   - "cooldown": tempo mínimo entre dois disparos da mesma regra; um cruzamento dentro
+#     dele é registrado como suprimido e não é enviado;
+#   - uma regra nova só registra o estado atual na primeira leitura (se o valor já estiver
+#     além do limite, não houve cruzamento e nada é enviado).
+#
+# Cada disparo (enviado, suprimido ou com falha) fica na tabela alert_events do SQLite.
+# =============================================================================
+
+# Valores herdados por todas as regras (cada regra pode sobrescrever).
+[defaults]
+cooldown = "4h"                  # formatos: "90s", "30m", "4h", "1d"
+channels = ["telegram", "n8n"]   # canal sem configuração no .env é ignorado
+
+# -----------------------------------------------------------------------------
+# type = "threshold" — compara um número do /api/summary com um limite
+#
+#   path        caminho no JSON de GET /api/summary (pontos separam os níveis)
+#   op          ">", ">=", "<" ou "<="
+#   value       limite, na mesma unidade do campo
+#   hysteresis  folga para rearmar (mesma unidade). Ex.: op ">" value 0.05 hysteresis
+#               0.01 → dispara acima de 0,05 e só rearma abaixo de 0,04
+#   unit        só para exibição na mensagem
+#   per         opcional: outro caminho cujo valor identifica uma leitura nova. Use para
+#               dados diários (ex.: a data do último dia liquidado dos ETFs): cada dia
+#               novo é avaliado uma vez, mesmo que o anterior também tenha passado do limite
+# -----------------------------------------------------------------------------
+
+[[rules]]
+id = "funding-alto"
+name = "Funding médio ponderado alto"
+description = "Comprados alavancados pagando caro: sinal de euforia em perpétuos."
+path = "derivatives.weighted_funding.rate_pct"   # % por ciclo de 8h
+op = ">"
+value = 0.05
+hysteresis = 0.01
+unit = "%"
+
+[[rules]]
+id = "funding-negativo"
+name = "Funding médio ponderado negativo"
+description = "Vendidos pagando para manter posição: pessimismo em perpétuos."
+path = "derivatives.weighted_funding.rate_pct"
+op = "<"
+value = -0.02
+hysteresis = 0.01
+unit = "%"
+
+[[rules]]
+id = "dvol-salto"
+name = "DVOL subiu forte em 24h"
+path = "volatility.dvol_change_24h"   # pontos de volatilidade
+op = ">="
+value = 10
+hysteresis = 3
+unit = "pts"
+
+[[rules]]
+id = "etf-saida"
+name = "Saída forte dos ETFs de BTC"
+path = "etf.last_day.total"           # último dia LIQUIDADO, US$ milhões
+per = "etf.last_day.date"             # cada dia liquidado é avaliado uma vez
+op = "<="
+value = -300
+unit = "US$ mi"
+
+[[rules]]
+id = "etf-entrada"
+name = "Entrada forte nos ETFs de BTC"
+path = "etf.last_day.total"
+per = "etf.last_day.date"
+op = ">="
+value = 500
+unit = "US$ mi"
+
+[[rules]]
+id = "preco-alta-24h"
+name = "Preço subiu 5% em 24h"
+path = "price.change_24h_pct"
+op = ">="
+value = 5
+hysteresis = 1
+unit = "%"
+
+[[rules]]
+id = "preco-queda-24h"
+name = "Preço caiu 5% em 24h"
+path = "price.change_24h_pct"
+op = "<="
+value = -5
+hysteresis = 1
+unit = "%"
+
+[[rules]]
+id = "oi-alta-24h"
+name = "Open interest +10% em 24h"
+path = "derivatives.open_interest.change_24h_pct"
+op = ">="
+value = 10
+hysteresis = 2
+unit = "%"
+
+[[rules]]
+id = "oi-queda-24h"
+name = "Open interest −10% em 24h"
+path = "derivatives.open_interest.change_24h_pct"
+op = "<="
+value = -10
+hysteresis = 2
+unit = "%"
+
+[[rules]]
+id = "fng-medo-extremo"
+name = "Fear & Greed em medo extremo"
+path = "sentiment.value"
+op = "<="
+value = 20
+hysteresis = 3
+
+[[rules]]
+id = "fng-ganancia-extrema"
+name = "Fear & Greed em ganância extrema"
+path = "sentiment.value"
+op = ">="
+value = 80
+hysteresis = 3
+
+# -----------------------------------------------------------------------------
+# type = "band_change" — o score de temperatura mudou de faixa
+# (Muito frio ≤ −60 < Frio ≤ −20 < Neutro ≤ 20 < Aquecido ≤ 60 < Muito aquecido)
+#
+#   hysteresis  pontos além da fronteira para a nova faixa valer. Com 5, sair de Neutro
+#               para Aquecido exige score > 25; voltar exige score ≤ 15.
+# -----------------------------------------------------------------------------
+
+[[rules]]
+id = "regime-faixa"
+name = "Temperatura do mercado mudou de faixa"
+type = "band_change"
+hysteresis = 5
+
+# -----------------------------------------------------------------------------
+# type = "health" — algum coletor falhou N ciclos seguidos (um alerta por coletor;
+# rearma quando o coletor volta a funcionar)
+# -----------------------------------------------------------------------------
+
+[[rules]]
+id = "saude-coletor"
+name = "Coletor falhando"
+type = "health"
+cycles = 3
+channels = ["telegram"]   # exemplo de regra que só vai para um canal
+
+# Para desligar uma regra sem apagá-la: enabled = false
