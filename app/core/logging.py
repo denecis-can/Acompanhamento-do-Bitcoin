@@ -28,6 +28,9 @@ class JsonFormatter(logging.Formatter):
 
 
 def setup_logging(level: str = "INFO") -> None:
+    # O console do Windows usa cp1252 por padrão e corrompe acentos.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
