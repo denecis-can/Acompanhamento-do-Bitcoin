@@ -1,28 +1,30 @@
-"""Farside Investors: fluxo diário dos ETFs de bitcoin à vista nos EUA (US$ milhões).
+"""Farside Investors: leitor da tabela de fluxos dos ETFs de BTC à vista (US$ milhões).
 
-A Farside não tem API; lemos a tabela HTML de https://farside.co.uk/btc/. Proteções:
-- User-Agent identificado e uma requisição a cada coleta (padrão: 4 h), com throttle de 5 s;
-- detecção de página de desafio do Cloudflare e de respostas grandes demais;
+Desde 17/10/2026 o Cloudflare da Farside bloqueia clientes automatizados, e o projeto não
+contorna a proteção. A tabela virou fonte de reserva por **importação manual**: salve a
+página (HTML) ou exporte a tabela (CSV) em data/farside_import.html / .csv. Ver o README.
+
+Proteções do parser:
 - colunas localizadas pelo cabeçalho (ticker), não por posição;
 - cada linha é validada: a soma dos ETFs precisa bater com a coluna Total, e o total
   diário precisa estar numa faixa plausível; linhas que falham são descartadas e logadas;
-- o dia corrente ainda sem números ("-" ou vazio) fica marcado como pendente;
-- se a estrutura mudar, o coletor falha com erro claro e o card segue com o último dado bom.
+- o dia ainda sem números ("-" ou vazio) fica marcado como pendente;
+- página de desafio do Cloudflare ou layout diferente geram erro claro.
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime
 from html.parser import HTMLParser
 
-from app.collectors.base import BaseCollector, CollectorError, CollectorResult
-from app.core.http import HttpError
+from app.collectors.base import CollectorError
 
 log = logging.getLogger("collector.farside")
 
-URL = "https://farside.co.uk/btc/"
 MONTHS = {m: i for i, m in enumerate(("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1)}
 DATE_RE = re.compile(r"^(\d{1,2}) ([A-Z][a-z]{2}) (\d{4})$")
 MAX_ABS_DAILY_TOTAL = 5_000.0  # US$ mi; o recorde diário até 2026 fica abaixo de 1.400
@@ -91,29 +93,64 @@ def parse_number(text: str) -> float | None:
 
 
 def parse_date(text: str) -> str | None:
-    m = DATE_RE.match(text.strip())
-    if not m or m.group(2) not in MONTHS:
+    """'16 Oct 2026' (formato da Farside) ou '2026-10-16' → '2026-10-16'."""
+    t = text.strip()
+    m = DATE_RE.match(t)
+    if m and m.group(2) in MONTHS:
+        return date(int(m.group(3)), MONTHS[m.group(2)], int(m.group(1))).isoformat()
+    try:
+        return datetime.strptime(t, "%Y-%m-%d").date().isoformat()
+    except ValueError:
         return None
-    return datetime(int(m.group(3)), MONTHS[m.group(2)], int(m.group(1))).date().isoformat()
 
 
-def parse(html: str) -> dict:
-    if any(marker in html for marker in CHALLENGE_MARKERS) and 'class="etf"' not in html:
-        raise CollectorError("Farside: página de desafio do Cloudflare (acesso bloqueado)")
-    p = _TableParser()
-    p.feed(html)
-    if not p.rows:
-        raise CollectorError("Farside: tabela de fluxos não encontrada (layout mudou?)")
+def summarize(days: list[dict], cumulative: dict | None = None, names: dict[str, str] | None = None) -> dict:
+    """Formato comum do card de ETFs (US$ mi), a partir de dias {date, total, by_ticker}.
 
-    header = next((r for r in p.rows if "IBIT" in r), None)
-    total_idx = next((i for r in p.rows for i, c in enumerate(r) if c == "Total"), None)
+    Usado pelo leitor da Farside e pela SoSoValue, para o card não depender da fonte.
+    """
+    days = sorted(days, key=lambda d: d["date"])
+    tickers = list(dict.fromkeys(t for d in days for t in d["by_ticker"]))
+
+    def window(n: int, ticker: str | None = None) -> float:
+        rows = days[-n:]
+        if ticker:
+            return sum(d["by_ticker"].get(ticker) or 0 for d in rows)
+        return sum(d["total"] for d in rows)
+
+    last = days[-1]
+    cum_by_ticker = (cumulative or {}).get("by_ticker", {})
+    return {
+        "unit": "US$ mi",
+        "last_day": last,
+        "sum_5d": window(5),
+        "sum_10d": window(10),
+        "by_ticker": [
+            {
+                "ticker": t,
+                "issuer": ISSUERS.get(t) or (names or {}).get(t, ""),
+                "last_day": last["by_ticker"].get(t),
+                "sum_5d": window(5, t),
+                "cumulative": cum_by_ticker.get(t),
+            }
+            for t in tickers
+        ],
+        "cumulative_total": (cumulative or {}).get("total"),
+        "days": [{"date": d["date"], "total": d["total"]} for d in days],
+    }
+
+
+def parse_rows(rows: list[list[str]]) -> dict:
+    """Valida e resume as linhas da tabela (vindas do HTML ou do CSV)."""
+    header = next((r for r in rows if "IBIT" in r), None)
+    total_idx = next((i for r in rows for i, c in enumerate(r) if c == "Total"), None)
     if header is None or total_idx is None:
         raise CollectorError("Farside: cabeçalho sem IBIT/Total (layout mudou?)")
     tickers = {i: t for i, t in enumerate(header) if t and i != total_idx and i > 0}
 
     days, pending, rejected = [], [], 0
     cumulative: dict | None = None
-    for row in p.rows:
+    for row in rows:
         if not row:
             continue
         if row[0] == "Total" and len(row) > total_idx:
@@ -141,52 +178,28 @@ def parse(html: str) -> dict:
 
     if len(days) < MIN_VALID_DAYS:
         raise CollectorError(f"Farside: só {len(days)} dias válidos ({rejected} descartados)")
-    days.sort(key=lambda d: d["date"])
-
-    def window(n: int, ticker: str | None = None) -> float:
-        rows = days[-n:]
-        if ticker:
-            return sum(d["by_ticker"].get(ticker) or 0 for d in rows)
-        return sum(d["total"] for d in rows)
-
-    last = days[-1]
-    return {
-        "unit": "US$ mi",
-        "last_day": last,
-        "sum_5d": window(5),
-        "sum_10d": window(10),
-        "by_ticker": [
-            {
-                "ticker": t,
-                "issuer": ISSUERS.get(t, ""),
-                "last_day": last["by_ticker"].get(t),
-                "sum_5d": window(5, t),
-                "cumulative": (cumulative or {}).get("by_ticker", {}).get(t),
-            }
-            for t in tickers.values()
-        ],
-        "cumulative_total": (cumulative or {}).get("total"),
-        "days": [{"date": d["date"], "total": d["total"]} for d in days],
-        "pending_dates": [d for d in pending if d > last["date"]],
-        "rejected_rows": rejected,
-    }
+    out = summarize(days, cumulative)
+    out["pending_dates"] = sorted(d for d in pending if d > out["last_day"]["date"])
+    out["rejected_rows"] = rejected
+    return out
 
 
-def _ts(day: str) -> int:
-    return int(datetime.fromisoformat(day).replace(tzinfo=timezone.utc).timestamp())
+def parse(html: str) -> dict:
+    """Página da Farside salva do navegador (HTML)."""
+    if any(marker in html for marker in CHALLENGE_MARKERS) and 'class="etf"' not in html:
+        raise CollectorError("Farside: o arquivo é a página de desafio do Cloudflare, não a tabela")
+    p = _TableParser()
+    p.feed(html)
+    if not p.rows:
+        raise CollectorError("Farside: tabela de fluxos não encontrada (layout mudou?)")
+    return parse_rows(p.rows)
 
 
-class FarsideCollector(BaseCollector):
-    name = "farside"
-    source = "Farside Investors"
-
-    async def collect(self) -> CollectorResult:
-        try:
-            html = await self.http.get_text(URL)
-        except HttpError as exc:
-            if any(marker in str(exc) for marker in CHALLENGE_MARKERS):
-                # Não tentamos contornar: o site bloqueia clientes automatizados de propósito.
-                raise CollectorError("Farside bloqueou o acesso automatizado (desafio do Cloudflare)") from exc
-            raise
-        data = parse(html)
-        return CollectorResult(data=data, series=[("etf.flow_total", _ts(d["date"]), d["total"]) for d in data["days"]])
+def parse_csv(text: str) -> dict:
+    """Tabela da Farside exportada/colada como CSV (vírgula ou ponto e vírgula)."""
+    sample = text[:2048]
+    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+    rows = [[c.strip() for c in r] for r in csv.reader(io.StringIO(text), delimiter=delimiter)]
+    if not rows:
+        raise CollectorError("Farside: CSV vazio")
+    return parse_rows(rows)

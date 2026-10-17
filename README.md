@@ -28,7 +28,8 @@ flowchart LR
         DR[Deribit]
         AM[Alternative.me]
         FR[FRED + federalreserve.gov]
-        FS[Farside]
+        SV[SoSoValue]
+        FS[(data/farside_import<br/>importação manual)]
         MP[mempool.space]
         CM[Coin Metrics]
         DL[DefiLlama]
@@ -38,7 +39,8 @@ flowchart LR
     subgraph Backend [FastAPI]
         SCH[APScheduler] --> COL[collectors/<br/>um módulo por fonte]
         COL --> HTTP[core/http<br/>timeout · retry · rate limit]
-        HTTP --> BN & CB & BY & OK & DR & AM & FR & FS & MP & CM & DL & RSS
+        HTTP --> BN & CB & BY & OK & DR & AM & FR & SV & MP & CM & DL & RSS
+        COL --> FS
         COL --> DB[(SQLite<br/>latest · series · candles)]
         DB --> SVC[services/<br/>status · indicadores · opções · score · summary]
         SVC --> API[api/<br/>/api/summary · /api/candles · /api/series · /api/health]
@@ -81,7 +83,8 @@ tests/                 # pytest + respx, com respostas reais gravadas em fixture
 | Opções e basis | Deribit | `public/get_book_summary_by_currency` (`kind=option` e `kind=future`) | Não | 15 min |
 | Funding 30 dias | Binance Futures | `/fapi/v1/fundingRate` | Não | 5 min |
 | Tendência | Binance Spot | `/api/v3/klines` com `interval=1w` (média de 200 semanas) | Não | 1 min |
-| ETFs à vista | Farside Investors | scraping de `farside.co.uk/btc/` | Não | 4 h |
+| ETFs à vista | SoSoValue OpenAPI (principal) | `/etfs/summary-history`, `/etfs`, `/etfs/{ticker}/history` (`symbol=BTC`, `country_code=US`) | **Sim** | 12 h |
+| ETFs à vista (reserva) | Farside Investors | importação manual de `data/farside_import.html` ou `.csv` | Não | 12 h |
 | Stablecoins | DefiLlama | `stablecoins.llama.fi/stablecoins`, `/stablecoincharts/all` | Não | 6 h |
 | Rede | mempool.space | `/v1/fees/recommended`, `/mempool`, `/v1/difficulty-adjustment`, `/v1/mining/hashrate/3m`, `/blocks/tip/height` | Não | 10 min |
 | Valuation e atividade | Coin Metrics Community | `timeseries/asset-metrics` (CapMVRVCur, CapMrktCurUSD, AdrActCnt, TxCnt, FeeTotNtv, SplyCur) | Não | 6 h |
@@ -90,11 +93,13 @@ tests/                 # pytest + respx, com respostas reais gravadas em fixture
 
 Observações:
 
-- **Farside:** em 17/10/2026, o Cloudflare do site passou a responder 403 ao cliente Python (o curl passa, então o bloqueio é pela assinatura TLS, não pelos cabeçalhos). O projeto **não** tenta contornar a proteção: o card mostra o motivo, e o score segue sem esse componente. O parser continua testado com a tabela real gravada.
+- **SoSoValue** ([documentação](https://sosovalue-1.gitbook.io/sosovalue-api-doc)): chave por conta em `sosovalue.com/developer/dashboard`. O limite é por chave: 20 requisições/minuto e 100 mil/mês. Cada coleta faz cerca de 14 chamadas (resumo, lista e histórico de cada ETF). Com 2 coletas por dia são ~850/mês, e um reinício não gasta cota se o dado salvo tiver menos de 12 h. A API só devolve o último mês e liquida em T+1: o dia corrente aparece como pendente até o dia seguinte.
+- **Termos da SoSoValue:** não há termos específicos da API publicados. Os termos gerais da plataforma ([Terms of Use](https://sosovalue.gitbook.io/helpdocument/resources/terms-of-use)) autorizam só **uso pessoal e não comercial** e proíbem reproduzir, republicar ou exibir publicamente o conteúdo (cláusulas 23, 26 e 29). Na prática: rodar o dashboard para você está ok; **não** hospede uma versão pública com os dados da SoSoValue nem publique dados dela. Por isso as fixtures de teste da SoSoValue são sintéticas.
+- **Farside:** em 17/10/2026, o Cloudflare do site passou a responder 403 ao cliente Python (o curl passa, então o bloqueio é pela assinatura TLS, não pelos cabeçalhos). O projeto **não** tenta contornar a proteção. A tabela virou fonte de reserva por importação manual (abaixo).
 - **Coin Metrics:** o plano gratuito não expõe o valor realizado (`CapRealUSD`), mas expõe o MVRV; valor realizado = valor de mercado ÷ MVRV e NUPL = 1 − 1/MVRV.
 - **FOMC:** o FRED marca o release "FOMC Press Release" todo dia, então as datas das reuniões vêm do calendário oficial do Fed.
 
-Todos os endpoints foram testados a partir do Brasil em 16 e 17/10/2026, sem bloqueio regional (exceto a Farside, acima). Binance e Bybit bloqueiam IPs dos EUA: se o projeto for hospedado lá, o coletor de spot usa o espelho `data-api.binance.vision` e o preço cai para OKX/Bybit.
+Todos os endpoints foram testados a partir do Brasil em 16 e 17/10/2026, sem bloqueio regional (exceto a coleta automática da Farside, acima). Binance e Bybit bloqueiam IPs dos EUA: se o projeto for hospedado lá, o coletor de spot usa o espelho `data-api.binance.vision` e o preço cai para OKX/Bybit.
 
 ## Como rodar
 
@@ -115,7 +120,7 @@ pip install -r requirements-dev.txt
 
 # 3. Configurar o .env
 copy .env.example .env
-#    Edite o .env e preencha FRED_API_KEY
+#    Edite o .env e preencha FRED_API_KEY e SOSOVALUE_API_KEY
 
 # 4. Subir o servidor
 uvicorn app.main:app --reload --port 8000
@@ -130,11 +135,23 @@ No Linux/macOS: `python3 -m venv .venv && source .venv/bin/activate` e os mesmos
 ### Com Docker
 
 ```bash
-cp .env.example .env   # preencha FRED_API_KEY
+cp .env.example .env   # preencha FRED_API_KEY e SOSOVALUE_API_KEY
 docker compose up -d --build
 ```
 
 O banco SQLite fica em `./data`, montado como volume.
+
+### Importação manual dos fluxos de ETF (reserva)
+
+Sem `SOSOVALUE_API_KEY`, ou se a SoSoValue falhar, o card de ETFs lê um arquivo da Farside salvo por você. O card indica a fonte em uso, a data do último dado e, na reserva, o arquivo e quando ele foi salvo.
+
+1. Abra https://farside.co.uk/btc/ no navegador.
+2. Salve de um destes jeitos, dentro da pasta `data/` do projeto (no Docker, é o volume `./data`):
+   - **HTML:** Ctrl+S → "Página da Web, somente HTML" → `data/farside_import.html`;
+   - **CSV:** copie a tabela para uma planilha e exporte como `data/farside_import.csv`. A primeira coluna é a data (`16 Oct 2026` ou `2026-10-16`), depois uma coluna por ticker (`IBIT`, `FBTC`, …) e a coluna `Total`. Negativos podem vir entre parênteses. Separador `,` ou `;`; com `,`, ponha entre aspas os números com separador de milhar.
+3. Pronto: o arquivo é lido na próxima coleta (a cada 12 h ou ao reiniciar o servidor). Se houver mais de um `farside_import.*`, vale o mais recente.
+
+O arquivo passa pelas mesmas validações do leitor: soma dos ETFs = Total, faixa plausível e dias pendentes. Uma página de desafio do Cloudflare salva por engano gera erro claro. A pasta `data/` está no `.gitignore`.
 
 ### Testes
 
@@ -171,7 +188,8 @@ Os coletores são testados com respostas reais gravadas em `tests/fixtures/` e m
 - **Funding ponderado por open interest** de Binance, Bybit e OKX, porque uma exchange com o dobro de OI pesa o dobro. A anualização assume 3 ciclos de 8h por dia.
 - **Histórico próprio.** A Binance só devolve 30 dias de `openInterestHist`. Gravar as séries no SQLite permite calcular variações e correlações em janelas maiores.
 - **Opções calculadas localmente.** Uma chamada traz a cadeia inteira da Deribit; delta (Black-76 sobre o forward, juros zero, como a Deribit precifica), max pain, put/call e skew de 25 delta saem de funções puras em `services/options.py`.
-- **Scraping com proteções.** A Farside é lida com User-Agent identificado, throttle de 5 s, teto de tamanho, detecção de desafio do Cloudflare, colunas localizadas pelo cabeçalho e validação de cada linha (soma dos ETFs = Total, faixa plausível). Mudança de layout gera erro claro e o card segue com o último dado bom.
+- **ETFs com fonte principal e reserva.** A SoSoValue (API com chave) vem primeiro; a tabela da Farside entra por importação manual quando a API não está disponível. As duas fontes saem no mesmo formato, então o card e o score não dependem de qual está em uso. O leitor da Farside localiza colunas pelo cabeçalho e valida cada linha (soma dos ETFs = Total, faixa plausível). Uma mudança de layout gera erro claro, e o card segue com o último dado bom.
+- **Cota respeitada com cache.** Coletores com cota (`cache_on_restart`) não chamam a API no startup se o último dado bom ainda estiver dentro do intervalo.
 - **Temperatura do mercado descritiva.** Oito componentes (funding, basis, skew, Fear & Greed, Mayer, MVRV, fluxo de ETFs e stablecoins) viram notas de −1 a +1 por âncoras fixas; o score é a média simples × 100, só com pelo menos 4 componentes. O `/api/summary` expõe valor, âncoras, nota e motivo de cada um, e o front mostra a conta inteira. Não é recomendação.
 - **Log estruturado em JSON**, uma linha por evento, pronto para Loki, Datadog ou `jq`.
 - **Front sem build.** HTML, CSS e JS puros servidos pelo FastAPI. O status de cada card usa ícone e rótulo, não só cor.
@@ -179,7 +197,7 @@ Os coletores são testados com respostas reais gravadas em `tests/fixtures/` e m
 ## Roadmap
 
 - [x] **Fase 1:** preço, funding/OI, long/short, DVOL, Fear & Greed, macro FRED, cache e dashboard
-- [x] **Fase 2:** opções (max pain, put/call, skew, IV a termo), basis, fluxo de ETFs (Farside, hoje bloqueada pelo Cloudflare), on-chain (mempool.space e Coin Metrics), stablecoins (DefiLlama), notícias (RSS), indicadores derivados, score de temperatura e layout em seções
+- [x] **Fase 2:** opções (max pain, put/call, skew, IV a termo), basis, fluxo de ETFs (SoSoValue, com importação manual da Farside como reserva), on-chain (mempool.space e Coin Metrics), stablecoins (DefiLlama), notícias (RSS), indicadores derivados, score de temperatura e layout em seções
 - [ ] Correlação de 30 dias do BTC com Nasdaq e dólar (ficou da Fase 2)
 - [ ] **Fase 3:** alertas no Telegram com regras configuráveis e webhook para n8n
 - [ ] **Fase 4:** resumo diário gerado pela API da Claude a partir do `/api/summary`

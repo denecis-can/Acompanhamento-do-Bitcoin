@@ -163,7 +163,7 @@ def build_summary(
     basis = _section(sources, "deribit_options", opt["basis"] if opt else None, source="Deribit Futures")
 
     # --- fluxos: ETFs à vista e stablecoins ---------------------------------
-    etf = _section(sources, "farside", data("farside"))
+    etf = _section(sources, "etf", data("etf"))
     stablecoins = _section(sources, "stablecoins", data("stablecoins"))
 
     # --- on-chain -------------------------------------------------------------

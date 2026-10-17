@@ -98,6 +98,9 @@ class Database:
         )
         await self.conn.commit()
 
+    async def get_latest(self, collector: str) -> dict[str, Any] | None:
+        return (await self.get_latest_all()).get(collector)
+
     async def get_latest_all(self) -> dict[str, dict[str, Any]]:
         async with self.conn.execute("SELECT * FROM latest") as cur:
             rows = await cur.fetchall()

@@ -478,7 +478,15 @@ function renderEtf(e) {
   const has = !!e.last_day;
   setAlert("etf-error", e, has);
   $("etf-body").hidden = !has;
+  const src = $("etf-source");
+  src.hidden = !has;
   if (!has) return;
+  // fonte em uso + data do último dado; na reserva, explica por que a principal não foi usada
+  let line = `Fonte em uso: ${e.source} · último dado: ${fmt.isoDay(e.last_day.date)}`;
+  if (e.source_kind === "import") line += ` · arquivo ${e.import_file} de ${fmt.dateTime(e.imported_at)}`;
+  src.textContent = line;
+  src.dataset.fallback = e.fallback ? "1" : "0";
+  src.title = e.primary_error ? `SoSoValue indisponível: ${e.primary_error}` : "";
   setText("etf-last", fmt.usdMi(e.last_day.total));
   setText("etf-last-date", `fluxo líquido em ${fmt.isoDay(e.last_day.date)}` + (e.pending_dates?.length ? ` · ${fmt.isoDay(e.pending_dates[0])} pendente` : ""));
   setText("etf-5d", fmt.usdMi(e.sum_5d));

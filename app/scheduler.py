@@ -14,8 +14,24 @@ from app.core.db import Database
 log = logging.getLogger("scheduler")
 
 
+async def _fresh_cache(collector: BaseCollector, db: Database) -> bool:
+    """Primeira execução de um coletor com cota: o cache ainda vale? Então não chama a API."""
+    if not collector.cache_on_restart or collector.ran_once:
+        return False
+    entry = await db.get_latest(collector.name)
+    if not entry or not entry["ok"] or not entry["data"] or entry["fetched_at"] is None:
+        return False
+    age = time.time() - entry["fetched_at"]
+    return age < collector.interval_seconds and collector.cache_is_reusable(entry["data"])
+
+
 async def run_collector(collector: BaseCollector, db: Database) -> bool:
     started = time.monotonic()
+    if await _fresh_cache(collector, db):
+        collector.ran_once = True
+        log.info("cache válido, coleta pulada", extra={"collector": collector.name})
+        return True
+    collector.ran_once = True
     try:
         result = await collector.collect()
     except Exception as exc:  # noqa: BLE001 — qualquer falha vira status de erro no card

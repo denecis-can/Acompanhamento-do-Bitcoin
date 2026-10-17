@@ -229,6 +229,9 @@ main { max-width: 1600px; margin: 0 auto; padding: var(--gap) 24px; }
 .alert { font-size: 13px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--critical); color: var(--text-primary); background: color-mix(in srgb, var(--critical) 12%, transparent); }
 .alert::before { content: "✕ "; color: var(--critical); }
 .alert[hidden] { display: none; }
+.source-line { margin: 0; font-size: 12px; color: var(--text-secondary); }
+.source-line[hidden] { display: none; }
+.source-line[data-fallback="1"]::before { content: "▲ reserva · "; color: var(--warning); }
 .card-body { display: flex; flex-direction: column; gap: 8px; }
 .card-body[hidden] { display: none; }
 

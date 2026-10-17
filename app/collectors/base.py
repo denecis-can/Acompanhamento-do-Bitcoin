@@ -34,10 +34,17 @@ class BaseCollector(ABC):
     name: ClassVar[str]
     #: nome legível da fonte, exibido nos cards
     source: ClassVar[str]
+    #: no startup, reaproveita o cache se ainda estiver dentro do intervalo (fontes com cota)
+    cache_on_restart: ClassVar[bool] = False
 
     def __init__(self, http: HttpClient, interval_seconds: int) -> None:
         self.http = http
         self.interval_seconds = interval_seconds
+        self.ran_once = False
+
+    def cache_is_reusable(self, data: dict) -> bool:
+        """Se um dado em cache pode substituir a primeira coleta após um reinício."""
+        return True
 
     @property
     def stale_after(self) -> int:

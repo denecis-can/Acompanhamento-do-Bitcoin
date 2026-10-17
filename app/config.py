@@ -22,6 +22,8 @@ def _int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     fred_api_key: str
+    sosovalue_api_key: str
+    etf_import_dir: Path
     database_path: Path
     log_level: str
     http_timeout: float
@@ -45,6 +47,8 @@ def get_settings() -> Settings:
         db_path = BASE_DIR / db_path
     return Settings(
         fred_api_key=os.getenv("FRED_API_KEY", "").strip(),
+        sosovalue_api_key=os.getenv("SOSOVALUE_API_KEY", "").strip(),
+        etf_import_dir=BASE_DIR / "data",  # mesmo diretório montado como volume no Docker
         database_path=db_path,
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         http_timeout=float(_int("HTTP_TIMEOUT_SECONDS", 10)),
@@ -54,7 +58,7 @@ def get_settings() -> Settings:
         interval_volatility=_int("INTERVAL_VOLATILITY", 900),
         interval_sentiment=_int("INTERVAL_SENTIMENT", 3600),
         interval_macro=_int("INTERVAL_MACRO", 43200),
-        interval_etf=_int("INTERVAL_ETF", 14400),
+        interval_etf=_int("INTERVAL_ETF", 43200),  # fluxos diários: 2 coletas por dia
         interval_stablecoins=_int("INTERVAL_STABLECOINS", 21600),
         interval_mempool=_int("INTERVAL_MEMPOOL", 600),
         interval_onchain=_int("INTERVAL_ONCHAIN", 21600),

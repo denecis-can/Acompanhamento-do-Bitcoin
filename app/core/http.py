@@ -33,7 +33,7 @@ HOST_MIN_INTERVAL = {
     "api.alternative.me": 1.0,
     "api.stlouisfed.org": 0.6,  # FRED: 120 req/min
     "www.federalreserve.gov": 2.0,
-    "farside.co.uk": 5.0,  # scraping: uma página por coleta, sem pressa
+    "openapi.sosovalue.com": 3.5,  # 20 req/min por chave; ~17/min para ter folga
     "mempool.space": 0.5,
     "community-api.coinmetrics.io": 1.0,  # plano gratuito: 10 req a cada 6 s
     "stablecoins.llama.fi": 1.0,

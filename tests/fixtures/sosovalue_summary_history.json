@@ -1,0 +1,83 @@
+{
+ "code": 0,
+ "message": "success",
+ "data": [
+  {
+   "date": "2026-10-19",
+   "total_net_inflow": null,
+   "total_value_traded": 1200000000.0,
+   "total_net_assets": null,
+   "cum_net_inflow": null
+  },
+  {
+   "date": "2026-10-16",
+   "total_net_inflow": -82400000.0,
+   "total_value_traded": 3000000000.0,
+   "total_net_assets": 100000000000.0,
+   "cum_net_inflow": 47247800000.0
+  },
+  {
+   "date": "2026-10-15",
+   "total_net_inflow": 16800000.0,
+   "total_value_traded": 3000000000.0,
+   "total_net_assets": 100000000000.0,
+   "cum_net_inflow": 47330200000.0
+  },
+  {
+   "date": "2026-10-14",
+   "total_net_inflow": -263600000.0,
+   "total_value_traded": 3000000000.0,
+   "total_net_assets": 100000000000.0,
+   "cum_net_inflow": 47313400000.0
+  },
+  {
+   "date": "2026-10-13",
+   "total_net_inflow": 169000000.0,
+   "total_value_traded": 3000000000.0,
+   "total_net_assets": 100000000000.0,
+   "cum_net_inflow": 47577000000.0
+  },
+  {
+   "date": "2026-10-12",
+   "total_net_inflow": -65400000.0,
+   "total_value_traded": 3000000000.0,
+   "total_net_assets": 100000000000.0,
+   "cum_net_inflow": 47408000000.0
+  },
+  {
+   "date": "2026-10-09",
+   "total_net_inflow": 18800000.0,
+   "total_value_traded": 3000000000.0,
+   "total_net_assets": 100000000000.0,
+   "cum_net_inflow": 47473400000.0
+  },
+  {
+   "date": "2026-10-08",
+   "total_net_inflow": -210800000.0,
+   "total_value_traded": 3000000000.0,
+   "total_net_assets": 100000000000.0,
+   "cum_net_inflow": 47454600000.0
+  },
+  {
+   "date": "2026-10-07",
+   "total_net_inflow": -352100000.0,
+   "total_value_traded": 3000000000.0,
+   "total_net_assets": 100000000000.0,
+   "cum_net_inflow": 47665400000.0
+  },
+  {
+   "date": "2026-10-06",
+   "total_net_inflow": 122000000.0,
+   "total_value_traded": 3000000000.0,
+   "total_net_assets": 100000000000.0,
+   "cum_net_inflow": 48017500000.0
+  },
+  {
+   "date": "2026-10-05",
+   "total_net_inflow": -4500000.0,
+   "total_value_traded": 3000000000.0,
+   "total_net_assets": 100000000000.0,
+   "cum_net_inflow": 47895500000.0
+  }
+ ]
+}

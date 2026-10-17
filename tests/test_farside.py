@@ -1,13 +1,12 @@
-"""Scraping da Farside (tabela real gravada em 17/10/2026) e suas proteções."""
+"""Leitor da tabela da Farside (página real gravada em 17/10/2026), em HTML e CSV."""
 
 import re
 from pathlib import Path
 
 import pytest
-import respx
 
 from app.collectors.base import CollectorError
-from app.collectors.farside import FarsideCollector, parse, parse_date, parse_number
+from app.collectors.farside import parse, parse_csv, parse_date, parse_number
 
 HTML = (Path(__file__).parent / "fixtures" / "farside_btc.html").read_text(encoding="utf-8")
 
@@ -22,6 +21,7 @@ def test_parse_number(text, expected):
 
 def test_parse_date():
     assert parse_date("28 Sep 2026") == "2026-09-28"
+    assert parse_date("2026-09-28") == "2026-09-28"
     assert parse_date("Total") is None
     assert parse_date("28 Xyz 2026") is None
 
@@ -61,7 +61,7 @@ def test_row_with_inconsistent_total_is_rejected():
     assert d["last_day"]["date"] == "2026-10-15"
 
 
-def test_cloudflare_challenge_is_detected():
+def test_cloudflare_page_saved_by_mistake_is_detected():
     page = "<html><head><title>Just a moment...</title></head><body>cf-chl</body></html>"
     with pytest.raises(CollectorError, match="Cloudflare"):
         parse(page)
@@ -74,16 +74,31 @@ def test_layout_change_fails_clearly():
         parse('<table class="etf"><tr><th>x</th><th>Total</th></tr></table>')
 
 
-@respx.mock
-async def test_collector(http):
-    respx.get("https://farside.co.uk/btc/").respond(text=HTML, headers={"Content-Type": "text/html"})
-    result = await FarsideCollector(http, 14400).collect()
-    assert result.data["last_day"]["date"] == "2026-10-16"
-    assert len(result.series) == 15 and all(m == "etf.flow_total" for m, _, _ in result.series)
+CSV_ROWS = [
+    ["Date", "IBIT", "FBTC", "GBTC", "Total"],
+    ["12 Oct 2026", "(65.4)", "0.0", "0.0", "(65.4)"],
+    ["13 Oct 2026", "65.9", "103.1", "0.0", "169.0"],
+    ["14 Oct 2026", "(110.9)", "(152.7)", "0.0", "(263.6)"],
+    ["15 Oct 2026", "16.8", "0.0", "0.0", "16.8"],
+    ["2026-10-16", "(71.8)", "(10.6)", "0.0", "(82.4)"],
+    ["19 Oct 2026", "-", "-", "-", "-"],
+    ["Total", "65,568", "10,465", "(27,944)", "48,089"],
+]
 
 
-@respx.mock
-async def test_collector_reports_cloudflare_block(http):
-    respx.get("https://farside.co.uk/btc/").respond(403, text="<html><title>Just a moment...</title></html>")
-    with pytest.raises(CollectorError, match="Cloudflare"):
-        await FarsideCollector(http, 14400).collect()
+@pytest.mark.parametrize("delimiter", [",", ";"])
+def test_parse_csv(delimiter):
+    def cell(c):
+        return f'"{c}"' if delimiter in c else c
+
+    text = "\n".join(delimiter.join(cell(c) for c in r) for r in CSV_ROWS)
+    d = parse_csv(text)
+    assert d["last_day"] == {"date": "2026-10-16", "total": -82.4, "by_ticker": {"IBIT": -71.8, "FBTC": -10.6, "GBTC": 0.0}}
+    assert d["sum_5d"] == pytest.approx(-225.6)
+    assert d["pending_dates"] == ["2026-10-19"]
+    assert d["cumulative_total"] == 48_089
+
+
+def test_parse_csv_empty():
+    with pytest.raises(CollectorError):
+        parse_csv("")
