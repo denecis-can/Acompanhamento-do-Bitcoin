@@ -1,0 +1,8 @@
+{"realtime_start":"2026-10-16","realtime_end":"2026-11-30","order_by":"release_date","sort_order":"asc","count":5,"offset":0,"limit":1000,
+ "release_dates":[
+  {"release_id":18,"release_name":"H.15 Selected Interest Rates","date":"2026-10-19"},
+  {"release_id":10,"release_name":"Consumer Price Index","date":"2026-11-12"},
+  {"release_id":50,"release_name":"Employment Situation","date":"2026-11-06"},
+  {"release_id":999,"release_name":"Some Regional Survey","date":"2026-10-20"},
+  {"release_id":18,"release_name":"H.15 Selected Interest Rates","date":"2026-10-19"}
+ ]}
