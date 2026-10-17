@@ -165,6 +165,12 @@ def build_summary(
     # --- fluxos: stablecoins ------------------------------------------------
     stablecoins = _section(sources, "stablecoins", data("stablecoins"))
 
+    # --- on-chain -------------------------------------------------------------
+    onchain = {
+        "network": _section(sources, "mempool", data("mempool")),
+        "valuation": _section(sources, "coinmetrics", data("coinmetrics")),
+    }
+
     # --- tendência (candles diários e semanais do banco) ---------------------
     trend = None
     if candles.get("1d"):
@@ -198,6 +204,7 @@ def build_summary(
         "options": options,
         "basis": basis,
         "stablecoins": stablecoins,
+        "onchain": onchain,
         "sentiment": sentiment,
         "macro": macro,
         "sources": sources,

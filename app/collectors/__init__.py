@@ -5,12 +5,14 @@ from __future__ import annotations
 from app.collectors.base import BaseCollector, CollectorResult
 from app.collectors.binance_futures import BinanceFuturesCollector
 from app.collectors.binance_spot import BinanceSpotCollector
+from app.collectors.coinmetrics import CoinMetricsCollector
 from app.collectors.bybit import BybitCollector
 from app.collectors.coinbase import CoinbaseCollector
 from app.collectors.deribit import DeribitCollector
 from app.collectors.deribit_options import DeribitOptionsCollector
 from app.collectors.fear_greed import FearGreedCollector
 from app.collectors.fred import FredCollector
+from app.collectors.mempool import MempoolCollector
 from app.collectors.okx import OkxCollector
 from app.collectors.stablecoins import StablecoinsCollector
 from app.config import Settings
@@ -31,4 +33,6 @@ def build_collectors(http: HttpClient, s: Settings) -> list[BaseCollector]:
         FearGreedCollector(http, s.interval_sentiment),
         FredCollector(http, s.interval_macro, api_key=s.fred_api_key),
         StablecoinsCollector(http, s.interval_stablecoins),
+        MempoolCollector(http, s.interval_mempool),
+        CoinMetricsCollector(http, s.interval_onchain),
     ]
