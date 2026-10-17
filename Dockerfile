@@ -12,6 +12,8 @@ RUN pip install -r requirements.txt
 
 COPY app ./app
 COPY web ./web
+# respostas gravadas usadas pelo modo demonstração (DEMO_MODE=true)
+COPY tests/fixtures ./tests/fixtures
 
 # Usuário sem privilégios; /app/data recebe o volume do SQLite
 RUN useradd --create-home --uid 1000 appuser && mkdir -p /app/data && chown appuser /app/data

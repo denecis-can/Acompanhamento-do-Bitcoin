@@ -51,6 +51,13 @@ body {
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--border);
 }
+.demo-banner {
+  position: sticky; top: 53px; z-index: 9;
+  padding: 8px 24px; text-align: center; font-weight: 600; font-size: 13px;
+  color: #1a1a19; background: var(--warning);
+}
+.demo-banner::before { content: "▲ "; }
+.demo-banner[hidden] { display: none; }
 .brand { font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 8px; }
 .logo { color: #f7931a; font-size: 20px; }
 .topbar-meta { display: flex; gap: 12px; align-items: center; font-size: 13px; }

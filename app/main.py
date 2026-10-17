@@ -14,6 +14,7 @@ from app.config import BASE_DIR, get_settings
 from app.core.db import Database
 from app.core.http import HttpClient
 from app.core.logging import setup_logging
+from app.demo import DemoHttpClient, demo_settings
 from app.scheduler import build_scheduler
 
 log = logging.getLogger("app")
@@ -23,20 +24,26 @@ log = logging.getLogger("app")
 async def lifespan(app: FastAPI):
     settings = get_settings()
     setup_logging(settings.log_level)
+    if settings.demo_mode:
+        # nenhuma chamada externa: respostas sintéticas a partir das fixtures, banco separado
+        settings = demo_settings(settings)
+        http = DemoHttpClient()
+    else:
+        http = HttpClient(timeout=settings.http_timeout, max_retries=settings.http_max_retries)
 
     db = Database(settings.database_path)
     await db.connect()
-    http = HttpClient(timeout=settings.http_timeout, max_retries=settings.http_max_retries)
     collectors = build_collectors(http, settings)
     scheduler = build_scheduler(collectors, db)
 
     app.state.db = db
     app.state.collectors = collectors
+    app.state.demo = settings.demo_mode
     scheduler.start()
     log.info(
         "aplicação iniciada",
         extra={"db": str(settings.database_path), "collectors": [c.name for c in collectors],
-               "fred_key": bool(settings.fred_api_key)},
+               "fred_key": bool(settings.fred_api_key), "demo": settings.demo_mode},
     )
     try:
         yield

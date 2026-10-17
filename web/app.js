@@ -652,6 +652,9 @@ function renderNews(n) {
 async function loadSummary() {
   try {
     const s = await getJSON("/api/summary");
+    const banner = $("demo-banner");
+    banner.hidden = !s.demo?.enabled;
+    banner.textContent = s.demo?.banner || "";
     const parts = [
       () => renderRegime(s.regime),
       () => renderPrice(s.price),

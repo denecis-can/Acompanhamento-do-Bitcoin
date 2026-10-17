@@ -19,8 +19,14 @@ def _int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
+def _bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    return raw in ("1", "true", "yes", "sim") if raw else default
+
+
 @dataclass(frozen=True)
 class Settings:
+    demo_mode: bool
     fred_api_key: str
     sosovalue_api_key: str
     etf_import_dir: Path
@@ -46,6 +52,7 @@ def get_settings() -> Settings:
     if not db_path.is_absolute():
         db_path = BASE_DIR / db_path
     return Settings(
+        demo_mode=_bool("DEMO_MODE"),
         fred_api_key=os.getenv("FRED_API_KEY", "").strip(),
         sosovalue_api_key=os.getenv("SOSOVALUE_API_KEY", "").strip(),
         etf_import_dir=BASE_DIR / "data",  # mesmo diretório montado como volume no Docker

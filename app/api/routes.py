@@ -8,6 +8,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from app.demo import BANNER
 from app.services.summary import build_sources, get_summary
 
 router = APIRouter(prefix="/api")
@@ -45,7 +46,9 @@ ALLOWED_SERIES = {
 @router.get("/summary", summary="Snapshot completo do dashboard")
 async def summary(request: Request) -> dict:
     s = request.app.state
-    return await get_summary(s.db, s.collectors)
+    out = await get_summary(s.db, s.collectors)
+    out["demo"] = {"enabled": True, "banner": BANNER} if s.demo else {"enabled": False}
+    return out
 
 
 @router.get("/candles", summary="Candles OHLCV do BTCUSDT (Binance)")
@@ -79,4 +82,4 @@ async def health(request: Request) -> dict:
     s = request.app.state
     sources = build_sources(await s.db.get_latest_all(), s.collectors, time.time())
     overall = "ok" if all(v["status"] == "ok" for v in sources.values()) else "degradado"
-    return {"status": overall, "sources": sources}
+    return {"status": overall, "demo": s.demo, "sources": sources}

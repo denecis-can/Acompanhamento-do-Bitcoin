@@ -6,5 +6,6 @@ __pycache__
 .pytest_cache
 data
 .env
-tests
+tests/*.py
+tests/__pycache__
 docs
