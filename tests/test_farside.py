@@ -80,3 +80,10 @@ async def test_collector(http):
     result = await FarsideCollector(http, 14400).collect()
     assert result.data["last_day"]["date"] == "2026-10-16"
     assert len(result.series) == 15 and all(m == "etf.flow_total" for m, _, _ in result.series)
+
+
+@respx.mock
+async def test_collector_reports_cloudflare_block(http):
+    respx.get("https://farside.co.uk/btc/").respond(403, text="<html><title>Just a moment...</title></html>")
+    with pytest.raises(CollectorError, match="Cloudflare"):
+        await FarsideCollector(http, 14400).collect()

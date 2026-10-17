@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 
 from app.collectors.base import BaseCollector, CollectorError, CollectorResult
+from app.core.http import HttpError
 
 log = logging.getLogger("collector.farside")
 
@@ -180,5 +181,12 @@ class FarsideCollector(BaseCollector):
     source = "Farside Investors"
 
     async def collect(self) -> CollectorResult:
-        data = parse(await self.http.get_text(URL))
+        try:
+            html = await self.http.get_text(URL)
+        except HttpError as exc:
+            if any(marker in str(exc) for marker in CHALLENGE_MARKERS):
+                # Não tentamos contornar: o site bloqueia clientes automatizados de propósito.
+                raise CollectorError("Farside bloqueou o acesso automatizado (desafio do Cloudflare)") from exc
+            raise
+        data = parse(html)
         return CollectorResult(data=data, series=[("etf.flow_total", _ts(d["date"]), d["total"]) for d in data["days"]])
