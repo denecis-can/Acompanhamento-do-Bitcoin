@@ -86,6 +86,7 @@ body {
 .small { font-size: 12px; }
 .note { margin: 4px 0 0; font-size: 12px; color: var(--text-muted); }
 .empty { display: grid; place-items: center; height: 100%; font-size: 13px; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 8px; }
+.empty[hidden] { display: none; }
 
 .delta { font-variant-numeric: tabular-nums; font-weight: 600; }
 .delta.up { color: var(--up); }
