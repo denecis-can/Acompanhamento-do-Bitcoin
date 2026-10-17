@@ -14,6 +14,10 @@ router = APIRouter(prefix="/api")
 # Métricas de série expostas ao front (evita consultas arbitrárias no banco).
 ALLOWED_SERIES = {
     "deribit.dvol",
+    "deribit.put_call_oi",
+    "deribit.atm_iv_30d",
+    "deribit.skew_25d_30d",
+    "deribit.basis_3m",
     "fng.value",
     "binance.funding_rate",
     "binance.oi_usd",

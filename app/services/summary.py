@@ -37,8 +37,19 @@ def build_sources(latest: dict[str, dict], collectors: list[BaseCollector], now:
 
 
 def _meta(sources: dict, name: str) -> dict:
-    s = sources[name]
+    s = sources.get(name)
+    if s is None:  # coletor não registrado (ex.: testes com subconjunto)
+        return {"source": None, "status": "pendente", "updated_at": None}
     return {"source": s["source"], "status": s["status"], "updated_at": s["updated_at"]}
+
+
+def _section(sources: dict, name: str, d: dict | None, **extra: Any) -> dict:
+    """Bloco padrão de um card: meta da fonte + dados (ou vazio) + erro, se houver."""
+    out = {**_meta(sources, name), **(d or {}), **extra}
+    err = sources.get(name, {}).get("error")
+    if err:
+        out["error"] = err
+    return out
 
 
 def closed_closes(candles: list[dict], interval_ms: int, now: float) -> list[float]:
@@ -146,6 +157,11 @@ def build_summary(
     dvol = data("deribit")
     volatility = {**_meta(sources, "deribit"), **(dvol or {})}
 
+    # --- opções e basis (Deribit) ------------------------------------------
+    opt = data("deribit_options")
+    options = _section(sources, "deribit_options", {k: v for k, v in opt.items() if k != "basis"} if opt else None)
+    basis = _section(sources, "deribit_options", opt["basis"] if opt else None, source="Deribit Futures")
+
     # --- tendência (candles diários e semanais do banco) ---------------------
     trend = None
     if candles.get("1d"):
@@ -176,6 +192,8 @@ def build_summary(
         "derivatives": derivatives,
         "volatility": volatility,
         "trend": trend,
+        "options": options,
+        "basis": basis,
         "sentiment": sentiment,
         "macro": macro,
         "sources": sources,
