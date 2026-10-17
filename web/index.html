@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BTC Dashboard</title>
+  <meta name="description" content="Monitoramento do Bitcoin: preço, derivativos, volatilidade, sentimento e macro.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">₿</span> BTC Dashboard</div>
+    <div class="topbar-meta">
+      <span id="overall-status" class="badge" data-status="pendente">carregando…</span>
+      <span class="muted">Atualizado <time id="generated-at">—</time></span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- Preço -->
+    <section class="card span-2" id="card-price">
+      <header class="card-head">
+        <h2>Preço BTC/USDT</h2>
+        <div class="card-meta" data-meta="price"></div>
+      </header>
+      <div class="hero-row">
+        <div>
+          <div class="hero" id="price-value">—</div>
+          <div class="sub"><span id="price-change" class="delta">—</span> <span class="muted">24h</span></div>
+        </div>
+        <dl class="kv">
+          <div><dt>Máx. 24h</dt><dd id="price-high">—</dd></div>
+          <div><dt>Mín. 24h</dt><dd id="price-low">—</dd></div>
+          <div><dt>Volume 24h</dt><dd id="price-volume">—</dd></div>
+        </dl>
+        <div class="seg" role="tablist" aria-label="Intervalo dos candles">
+          <button class="seg-btn active" data-interval="1h" role="tab" aria-selected="true">1h</button>
+          <button class="seg-btn" data-interval="1d" role="tab" aria-selected="false">1d</button>
+        </div>
+      </div>
+      <div class="ohlc muted" id="ohlc-legend">&nbsp;</div>
+      <div id="price-chart" class="chart chart-tall" aria-label="Gráfico de candles do BTCUSDT"></div>
+    </section>
+
+    <!-- Coinbase Premium -->
+    <section class="card" id="card-premium">
+      <header class="card-head">
+        <h2>Coinbase Premium</h2>
+        <div class="card-meta" data-meta="premium"></div>
+      </header>
+      <div class="hero" id="premium-usd">—</div>
+      <div class="sub"><span id="premium-pct" class="delta">—</span></div>
+      <dl class="kv">
+        <div><dt>Coinbase (USD)</dt><dd id="premium-cb">—</dd></div>
+        <div><dt>Binance (USDT)</dt><dd id="premium-bn">—</dd></div>
+      </dl>
+      <p class="note">Prêmio positivo sugere demanda americana mais forte. USDT ≠ USD: variações do USDT afetam o valor.</p>
+    </section>
+
+    <!-- Funding -->
+    <section class="card" id="card-funding">
+      <header class="card-head">
+        <h2>Funding rate</h2>
+        <div class="card-meta" data-meta="funding"></div>
+      </header>
+      <div class="hero" id="funding-weighted">—</div>
+      <div class="sub muted" id="funding-annual">—</div>
+      <table class="table compact" aria-label="Funding por exchange">
+        <thead><tr><th>Exchange</th><th class="num">Funding</th><th class="num">OI</th><th>Status</th></tr></thead>
+        <tbody id="funding-table"></tbody>
+      </table>
+      <p class="note">Média ponderada pelo open interest. Ciclo de 8h.</p>
+    </section>
+
+    <!-- Open interest + long/short -->
+    <section class="card" id="card-oi">
+      <header class="card-head">
+        <h2>Open interest</h2>
+        <div class="card-meta" data-meta="oi"></div>
+      </header>
+      <div class="hero" id="oi-total">—</div>
+      <div class="sub"><span id="oi-change" class="delta">—</span> <span class="muted">24h (Binance)</span></div>
+      <h3 class="mini-title">Long/short — contas Binance</h3>
+      <div class="ls-bar" aria-hidden="true"><span id="ls-long"></span><span id="ls-short"></span></div>
+      <div class="ls-labels">
+        <span><i class="key key-1"></i>Long <b id="ls-long-pct">—</b></span>
+        <span class="muted">razão <b id="ls-ratio">—</b></span>
+        <span>Short <b id="ls-short-pct">—</b><i class="key key-2"></i></span>
+      </div>
+    </section>
+
+    <!-- DVOL -->
+    <section class="card" id="card-dvol">
+      <header class="card-head">
+        <h2>DVOL — volatilidade implícita</h2>
+        <div class="card-meta" data-meta="volatility"></div>
+      </header>
+      <div class="hero-inline">
+        <span class="hero" id="dvol-value">—</span>
+        <span id="dvol-change" class="delta">—</span><span class="muted">pts 24h</span>
+      </div>
+      <div class="chart"><canvas id="dvol-chart" aria-label="DVOL nos últimos 7 dias"></canvas></div>
+    </section>
+
+    <!-- Fear & Greed -->
+    <section class="card" id="card-fng">
+      <header class="card-head">
+        <h2>Fear &amp; Greed</h2>
+        <div class="card-meta" data-meta="sentiment"></div>
+      </header>
+      <div class="hero-inline">
+        <span class="hero" id="fng-value">—</span>
+        <span id="fng-class" class="pill">—</span>
+      </div>
+      <div class="fng-scale" aria-hidden="true"><span id="fng-marker"></span></div>
+      <div class="fng-scale-labels muted"><span>0 medo extremo</span><span>100 ganância extrema</span></div>
+      <div class="chart chart-short"><canvas id="fng-chart" aria-label="Fear & Greed nos últimos 30 dias"></canvas></div>
+    </section>
+
+    <!-- Macro -->
+    <section class="card span-2" id="card-macro">
+      <header class="card-head">
+        <h2>Macro (EUA)</h2>
+        <div class="card-meta" data-meta="macro"></div>
+      </header>
+      <div id="macro-error" class="alert" hidden></div>
+      <div class="macro-layout">
+        <table class="table" aria-label="Indicadores macro">
+          <thead><tr><th>Série</th><th class="num">Último</th><th class="num">Var.</th><th>Data</th></tr></thead>
+          <tbody id="macro-table"></tbody>
+        </table>
+        <div>
+          <h3 class="mini-title">Juros dos Treasuries — 1 ano</h3>
+          <div class="chart">
+            <canvas id="yields-chart" aria-label="Juros de 2 e 10 anos"></canvas>
+            <div class="empty" id="yields-empty" hidden>Sem dados do FRED ainda.</div>
+          </div>
+          <div class="muted small">Spread 10a−2a: <b id="spread-2s10s">—</b></div>
+        </div>
+      </div>
+      <h3 class="mini-title">Próximas divulgações</h3>
+      <ul class="releases" id="releases"></ul>
+    </section>
+  </main>
+
+  <footer class="disclaimer">Ferramenta informativa. Não é recomendação de investimento.</footer>
+</body>
+</html>
