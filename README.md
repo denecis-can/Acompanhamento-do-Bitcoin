@@ -60,7 +60,10 @@ app/
 ├── core/              # http.py (resiliência), db.py (SQLite), logging.py (JSON)
 ├── collectors/        # base.py (interface comum) + um módulo por fonte
 ├── services/          # status.py, indicators.py, options.py, regime.py, summary.py
+├── alerts/            # rules.py (TOML), engine.py (antirruído), channels.py, service.py, resumo diário
+├── demo.py            # DEMO_MODE: cliente HTTP servido pelas fixtures
 └── api/routes.py
+config/                # alerts.toml (regras ativas) e alerts.example.toml (comentado)
 web/                   # index.html, app.js, styles.css
 tests/                 # pytest + respx, com respostas reais gravadas em fixtures/
 ```
@@ -186,6 +189,91 @@ pytest -q
 
 Os coletores são testados com respostas reais gravadas em `tests/fixtures/` e mockadas com `respx`. Nenhum teste acessa a rede.
 
+## Alertas (Telegram e n8n)
+
+A cada 60 s o servidor avalia as regras de `config/alerts.toml` contra o `/api/summary`. Quando uma regra cruza o limite, ele envia o alerta para o Telegram e/ou para o webhook do n8n e registra o disparo no SQLite (`alert_events`). Às 08:00 (America/Sao_Paulo, configurável) sai um resumo diário.
+
+**Regras.** Ficam em `config/alerts.toml`, versionado e editado à mão; cada campo está explicado em `config/alerts.example.toml`. As mudanças valem no próximo reinício. Limites iniciais:
+
+| Regra | Condição |
+|---|---|
+| Funding médio ponderado | > 0,05% ou < −0,02% (por ciclo de 8h) |
+| DVOL | sobe ≥ 10 pontos em 24h |
+| ETFs (último dia liquidado) | saída ≥ US$ 300 mi ou entrada ≥ US$ 500 mi |
+| Preço | ±5% em 24h |
+| Open interest | ±10% em 24h |
+| Fear & Greed | ≤ 20 ou ≥ 80 |
+| Temperatura do mercado | mudou de faixa |
+| Saúde | qualquer coletor falhou 3 ciclos seguidos |
+
+**Antirruído (sempre ativo).**
+- O alerta sai só ao **cruzar** o limite, não a cada leitura além dele.
+- Depois do disparo, a regra só **rearma** quando o valor volta com folga (`hysteresis`). Um valor oscilando em cima do limite não gera rajadas.
+- **Cooldown** por regra (padrão 4h): um novo cruzamento dentro dele fica registrado como `suprimido` e não é enviado.
+- Uma regra nova só registra o estado na primeira leitura.
+- Dados diários (ETFs) usam `per`: cada dia liquidado é avaliado uma vez.
+
+**Resumo diário.** Traz o score e seus componentes, o preço e a variação em 24h, o funding, o DVOL, o fluxo de ETFs do último dia liquidado e os alertas das últimas 24h. O horário fica em `DAILY_SUMMARY_TIME` e o fuso em `TIMEZONE` no `.env`; vazio desativa o resumo.
+
+**Segredos só no `.env`.** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` e `N8N_WEBHOOK_URL` ficam vazios no `.env.example`; vazio desativa o canal. Eles nunca vão para o banco, para os logs nem para a API: `GET /api/alerts` diz só se cada canal está configurado.
+
+### Criar o bot no Telegram e descobrir o seu chat_id
+
+1. No Telegram, abra **@BotFather**. Confira que é a conta oficial, com selo de verificação.
+2. Envie `/newbot`. Escolha um nome (ex.: `BTC Dashboard`) e um username terminado em `bot` (ex.: `meu_btc_dash_bot`).
+3. O BotFather responde com o **token**, no formato `123456789:AA...`. Copie para o `.env`:
+   `TELEGRAM_BOT_TOKEN=123456789:AA...`
+   Trate o token como senha. Se vazar, use `/revoke` no BotFather para gerar outro.
+4. Abra o seu bot pelo link que o BotFather mostrou (`t.me/<username>`) e toque em **Iniciar**, ou envie qualquer mensagem. Um bot não pode iniciar a conversa.
+5. Descubra o seu **chat_id**. No PowerShell, com o token no lugar de `<TOKEN>`:
+   ```powershell
+   (Invoke-RestMethod "https://api.telegram.org/bot<TOKEN>/getUpdates").result.message.chat | Select-Object id, first_name, username
+   ```
+   O `id` (só números) é o seu chat_id. Se a lista vier vazia, mande outra mensagem ao bot e rode de novo. Copie para o `.env`:
+   `TELEGRAM_CHAT_ID=123456789`
+6. Reinicie o servidor e teste:
+   ```powershell
+   python -m app.alerts teste     # mensagem de teste em cada canal configurado
+   python -m app.alerts resumo    # resumo diário agora
+   ```
+   O card "Alertas" do dashboard passa a mostrar "Telegram: configurado".
+
+Nesta fase o bot **só envia**. A estrutura para comandos (`/status`, `/silenciar`) está pronta em `app/alerts/commands.py`, mas desligada. Quando for ligada, o bot só vai responder ao `TELEGRAM_CHAT_ID` configurado; mensagens de qualquer outro chat são ignoradas.
+
+**Termos.** Mande alertas só para o seu chat privado. Encaminhar para um grupo ou canal republicaria dados da SoSoValue (ver [Fontes e termos de uso](#fontes-e-termos-de-uso)).
+
+### Webhook para o n8n (mesma máquina)
+
+1. No n8n, crie um workflow com um nó **Webhook**: método `POST`, path `btc-alertas`, *Respond* "Immediately". Ative o workflow.
+2. No `.env` do dashboard: `N8N_WEBHOOK_URL=http://localhost:5678/webhook/btc-alertas`. Use a *Production URL*; a URL de teste do n8n tem `/webhook-test/` e só funciona com o editor aberto. Se o **dashboard** rodar em Docker, troque `localhost` por `host.docker.internal`.
+3. Cada alerta chega com o mesmo payload JSON do alerta:
+
+```json
+{
+  "schema": "btc-dashboard.alert.v1",
+  "event_id": "9b2c…",
+  "type": "alert",
+  "rule": {"id": "funding-alto", "name": "Funding médio ponderado alto", "type": "threshold", "condition": "> 0,05%"},
+  "key": "funding-alto",
+  "value": 0.061,
+  "unit": "%",
+  "detail": {},
+  "headline": "Valor: +0,061% (limite > +0,050%)",
+  "message": "texto completo, sem HTML",
+  "fired_at": "2026-10-18T11:00:00+00:00",
+  "fired_at_local": "2026-10-18T08:00:00-03:00",
+  "context": {"price": 81573.79, "price_change_24h_pct": -0.89, "regime_score": -15, "regime_label": "Neutro"},
+  "dashboard_url": "http://localhost:8000",
+  "demo": false
+}
+```
+
+O resumo diário usa o mesmo endpoint, com `"type": "daily_summary"`. Para separar os dois, use um nó **IF** em `{{$json.body.type}}`. O `event_id` é único e serve para deduplicar se o n8n receber um reenvio.
+
+**Se o n8n estiver em Docker** e precisar consultar o dashboard (por exemplo, um nó HTTP Request lendo o `/api/summary`), o endereço é **`http://host.docker.internal:8000`**, e não `localhost`: dentro do container, `localhost` é o próprio container. No Docker Desktop (Windows/macOS) esse nome já existe. No Linux, acrescente `--add-host=host.docker.internal:host-gateway` ao container do n8n, e o dashboard precisa escutar no IP da bridge do Docker, não só em `127.0.0.1`. Para confirmar de dentro do container: `docker exec -it <container-do-n8n> wget -qO- http://host.docker.internal:8000/api/health`.
+
+**Não exponha o dashboard para fora da máquina.** O `uvicorn` dos exemplos escuta só em `127.0.0.1` (não use `--host 0.0.0.0`), e o `docker-compose.yml` publica a porta só em `127.0.0.1:8000`. A API não tem autenticação e foi feita para uso local.
+
 ## API
 
 | Rota | Descrição |
@@ -194,6 +282,8 @@ Os coletores são testados com respostas reais gravadas em `tests/fixtures/` e m
 | `GET /api/candles?interval=1h\|1d&limit=500` | OHLCV do BTCUSDT |
 | `GET /api/series/{métrica}?days=30` | Histórico (ex.: `deribit.dvol`, `deribit.skew_25d_30d`, `stables.total_usd`, `cm.mvrv`, `fred.DGS10`) |
 | `GET /api/etf-flows?days=90&ticker=TOTAL` | Histórico local do fluxo diário dos ETFs (US$ mi), por ETF ou total |
+| `GET /api/alerts` | Regras de alerta, estado de cada uma e se cada canal está configurado (sem segredos) |
+| `GET /api/alerts/events?hours=24` | Alertas disparados e resumos diários, com status e resultado por canal |
 | `GET /api/health` | Status de cada coletor (`ok` / `atrasado` / `erro` / `pendente`) |
 
 ## Decisões técnicas
@@ -227,5 +317,6 @@ Os coletores são testados com respostas reais gravadas em `tests/fixtures/` e m
 - [x] **Fase 2:** opções (max pain, put/call, skew, IV a termo), basis, fluxo de ETFs (SoSoValue, com importação manual da Farside como reserva), on-chain (mempool.space e Coin Metrics), stablecoins (DefiLlama), notícias (RSS), indicadores derivados, score de temperatura e layout em seções
 - [x] Modo demonstração, histórico local de ETFs e seção de fontes e termos de uso
 - [ ] Correlação de 30 dias do BTC com Nasdaq e dólar (ficou da Fase 2)
-- [ ] **Fase 3:** alertas no Telegram com regras configuráveis e webhook para n8n
+- [x] **Fase 3:** alertas no Telegram e webhook para o n8n, com regras em TOML, antirruído (cruzamento, histerese e cooldown), registro no SQLite e resumo diário
+- [ ] Comandos do Telegram (`/status`, `/silenciar`), só para o `TELEGRAM_CHAT_ID` (estrutura pronta)
 - [ ] **Fase 4:** resumo diário gerado pela API da Claude a partir do `/api/summary`
