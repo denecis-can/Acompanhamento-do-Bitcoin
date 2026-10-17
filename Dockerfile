@@ -12,6 +12,7 @@ RUN pip install -r requirements.txt
 
 COPY app ./app
 COPY web ./web
+COPY config ./config
 # respostas gravadas usadas pelo modo demonstração (DEMO_MODE=true)
 COPY tests/fixtures ./tests/fixtures
 

@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.alerts.setup import build_alert_service, schedule_alert_jobs
 from app.api.routes import router
 from app.collectors import build_collectors
 from app.config import BASE_DIR, get_settings
@@ -35,10 +36,14 @@ async def lifespan(app: FastAPI):
     await db.connect()
     collectors = build_collectors(http, settings)
     scheduler = build_scheduler(collectors, db)
+    alerts = build_alert_service(settings, db, collectors, http)
+    if alerts:
+        schedule_alert_jobs(scheduler, alerts, settings)
 
     app.state.db = db
     app.state.collectors = collectors
     app.state.demo = settings.demo_mode
+    app.state.alerts = alerts
     scheduler.start()
     log.info(
         "aplicação iniciada",

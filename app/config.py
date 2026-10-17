@@ -19,6 +19,11 @@ def _int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
+def _path(raw: str) -> Path:
+    p = Path(raw.strip())
+    return p if p.is_absolute() else BASE_DIR / p
+
+
 def _bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name, "").strip().lower()
     return raw in ("1", "true", "yes", "sim") if raw else default
@@ -44,6 +49,14 @@ class Settings:
     interval_mempool: int
     interval_onchain: int
     interval_news: int
+    # alertas (segredos só no .env)
+    telegram_bot_token: str
+    telegram_chat_id: str
+    n8n_webhook_url: str
+    alerts_file: Path
+    alerts_interval: int
+    timezone: str
+    dashboard_url: str
 
 
 @lru_cache
@@ -70,4 +83,11 @@ def get_settings() -> Settings:
         interval_mempool=_int("INTERVAL_MEMPOOL", 600),
         interval_onchain=_int("INTERVAL_ONCHAIN", 21600),
         interval_news=_int("INTERVAL_NEWS", 900),
+        telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
+        telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
+        n8n_webhook_url=os.getenv("N8N_WEBHOOK_URL", "").strip(),
+        alerts_file=_path(os.getenv("ALERTS_FILE", "config/alerts.toml")),
+        alerts_interval=_int("ALERTS_INTERVAL", 60),
+        timezone=os.getenv("TIMEZONE", "America/Sao_Paulo").strip() or "America/Sao_Paulo",
+        dashboard_url=os.getenv("DASHBOARD_URL", "http://localhost:8000").strip().rstrip("/"),
     )

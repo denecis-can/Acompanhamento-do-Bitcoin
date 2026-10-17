@@ -37,6 +37,7 @@ HOST_MIN_INTERVAL = {
     "mempool.space": 0.5,
     "community-api.coinmetrics.io": 1.0,  # plano gratuito: 10 req a cada 6 s
     "stablecoins.llama.fi": 1.0,
+    "api.telegram.org": 1.0,  # limite do Telegram: ~1 mensagem/s por chat
 }
 
 DEFAULT_MIN_INTERVAL = 0.2
@@ -138,6 +139,10 @@ class HttpClient:
             return resp.json()
         except ValueError as exc:
             raise HttpError(f"{url}: resposta não é JSON válido") from exc
+
+    async def post_json(self, url: str, payload: Any, **kwargs: Any) -> httpx.Response:
+        """POST com corpo JSON. Mesmo retry/backoff do GET (429 e 5xx)."""
+        return await self.request("POST", url, json=payload, **kwargs)
 
     async def get_text(self, url: str, params: dict[str, Any] | None = None, **kwargs: Any) -> str:
         """GET para HTML/XML. Recusa respostas acima de MAX_TEXT_BYTES."""
