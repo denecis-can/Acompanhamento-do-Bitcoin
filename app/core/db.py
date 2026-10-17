@@ -4,6 +4,8 @@
   válido e registra apenas a tentativa e o erro (o front continua exibindo o cache).
 - `series`: pontos (métrica, timestamp, valor) para histórico e variações.
 - `candles`: OHLCV do par principal.
+- `etf_flows`: fluxo diário liquidado dos ETFs de BTC à vista (US$ mi), por ticker e
+  "TOTAL". Acumula histórico além do último mês que a SoSoValue devolve.
 """
 
 from __future__ import annotations
@@ -41,7 +43,19 @@ CREATE TABLE IF NOT EXISTS candles (
     volume    REAL NOT NULL,
     PRIMARY KEY (symbol, interval, open_time)
 );
+CREATE TABLE IF NOT EXISTS etf_flows (
+    date       TEXT NOT NULL,
+    ticker     TEXT NOT NULL,
+    flow_usd_mi REAL NOT NULL,
+    source     TEXT NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (date, ticker)
+);
 """
+
+# Fonte de maior precedência no histórico de ETFs: um dia vindo dela nunca é
+# sobrescrito por uma importação manual.
+ETF_PRIMARY_SOURCE = "SoSoValue"
 
 
 class Database:
@@ -141,6 +155,30 @@ class Database:
             [(symbol, interval, *c) for c in candles],
         )
         await self.conn.commit()
+
+    # --- etf_flows --------------------------------------------------------
+
+    async def upsert_etf_flows(self, rows: Iterable[tuple[str, str, float, str]]) -> None:
+        """Grava dias liquidados sem duplicar: (data, ticker) é a chave; a fonte principal tem precedência."""
+        now = time.time()
+        await self.conn.executemany(
+            """
+            INSERT INTO etf_flows (date, ticker, flow_usd_mi, source, updated_at) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(date, ticker) DO UPDATE SET
+                flow_usd_mi = excluded.flow_usd_mi, source = excluded.source, updated_at = excluded.updated_at
+            WHERE excluded.source = ? OR etf_flows.source != ?
+            """,
+            [(*r, now, ETF_PRIMARY_SOURCE, ETF_PRIMARY_SOURCE) for r in rows],
+        )
+        await self.conn.commit()
+
+    async def get_etf_flows(self, since_date: str, ticker: str = "TOTAL") -> list[dict[str, Any]]:
+        async with self.conn.execute(
+            "SELECT date, flow_usd_mi, source FROM etf_flows WHERE ticker = ? AND date >= ? ORDER BY date",
+            (ticker, since_date),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
 
     async def get_candles(self, symbol: str, interval: str, limit: int = 500) -> list[dict[str, Any]]:
         async with self.conn.execute(

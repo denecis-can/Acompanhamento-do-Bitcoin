@@ -47,6 +47,8 @@ async def run_collector(collector: BaseCollector, db: Database) -> bool:
         await db.upsert_series(result.series)
     for batch in result.candles:
         await db.upsert_candles(batch.symbol, batch.interval, batch.rows)
+    if result.etf_flows:
+        await db.upsert_etf_flows(result.etf_flows)
     log.info(
         "coleta ok",
         extra={

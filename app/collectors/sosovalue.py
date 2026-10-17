@@ -41,8 +41,16 @@ def _mi(value: Any) -> float | None:
 
 def parse(summary: list[dict], tickers: list[dict], histories: dict[str, list[dict]]) -> dict:
     """Normaliza para o mesmo formato do leitor da Farside (US$ mi)."""
-    settled = [r for r in summary if r.get("total_net_inflow") is not None]
-    pending = sorted(r["date"] for r in summary if r.get("total_net_inflow") is None)
+    # Último dia com fluxo em algum ETF. Um dia do resumo depois dele ainda não foi
+    # liquidado, mesmo que o total venha preenchido (defesa contra um total provisório).
+    ticker_dates = [r["date"] for rows in histories.values() for r in rows if r.get("net_inflow") is not None]
+    cutoff = max(ticker_dates) if ticker_dates else None
+
+    def is_settled(r: dict) -> bool:
+        return r.get("total_net_inflow") is not None and (cutoff is None or r["date"] <= cutoff)
+
+    settled = [r for r in summary if is_settled(r)]
+    pending = sorted(r["date"] for r in summary if not is_settled(r))
     if len(settled) < 5:
         raise CollectorError(f"SoSoValue: só {len(settled)} dias liquidados no resumo")
     settled.sort(key=lambda r: r["date"])

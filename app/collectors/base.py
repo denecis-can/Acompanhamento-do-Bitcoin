@@ -27,6 +27,8 @@ class CollectorResult:
     # (métrica, timestamp em segundos, valor)
     series: list[tuple[str, int, float]] = field(default_factory=list)
     candles: list[CandleBatch] = field(default_factory=list)
+    # (data ISO, ticker ou "TOTAL", fluxo em US$ mi, fonte) — só dias liquidados
+    etf_flows: list[tuple[str, str, float, str]] = field(default_factory=list)
 
 
 class BaseCollector(ABC):

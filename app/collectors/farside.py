@@ -137,6 +137,7 @@ def summarize(days: list[dict], cumulative: dict | None = None, names: dict[str,
         ],
         "cumulative_total": (cumulative or {}).get("total"),
         "days": [{"date": d["date"], "total": d["total"]} for d in days],
+        "by_day": days,  # consumido pelo coletor para o histórico local; não vai para o cache
     }
 
 

@@ -191,7 +191,7 @@ def build_summary(
 
     fred = data("fred")
     macro = {**_meta(sources, "fred"), **(fred or {"series": {}, "upcoming_releases": []})}
-    if sources["fred"]["error"]:
+    if sources.get("fred", {}).get("error"):
         macro["error"] = sources["fred"]["error"]
 
     summary = {

@@ -192,9 +192,10 @@ function lineChart(key, canvasId, points, label, yFormat, xLabel = (ts) => fmt.s
 
 async function loadSeries() {
   const get = (metric, days) => getJSON(`/api/series/${metric}?days=${days}`).catch((e) => { console.warn(e); return { points: [] }; });
-  const [dvol, fng, d10, d2, stables, mvrv, hashrate] = await Promise.all([
+  const [dvol, fng, d10, d2, stables, mvrv, hashrate, etfFlows] = await Promise.all([
     get("deribit.dvol", 7), get("fng.value", 30), get("fred.DGS10", 365), get("fred.DGS2", 365),
     get("stables.total_usd", 365), get("cm.mvrv", 365), get("mempool.hashrate_ehs", 90),
+    getJSON("/api/etf-flows?days=120").catch((e) => { console.warn(e); return { points: [] }; }),
   ]);
 
   const hourLabel = (ts) => `${fmt.shortDate(ts)} ${String(new Date(ts * 1000).getHours()).padStart(2, "0")}h`;
@@ -208,6 +209,9 @@ async function loadSeries() {
     },
     options: (() => { const o = baseOptions({ yFormat: (v) => fmt.num(v, 0) }); o.scales.y.min = 0; o.scales.y.max = 100; return o; })(),
   });
+
+  etfHistory = etfFlows.points || [];
+  renderEtfChart();
 
   lineChart("stables", "stables-chart", stables.points, "Oferta total", (v) => fmt.compactUsd(v), fmt.monthYear);
   lineChart("mvrv", "mvrv-chart", mvrv.points, "MVRV", (v) => fmt.num(v, 2), fmt.monthYear);
@@ -473,6 +477,24 @@ function renderOptions(o) {
 
 // ---------- fluxos ---------------------------------------------------------------
 
+// Gráfico de ETFs: histórico local (/api/etf-flows, acumulado no SQLite além do mês que a
+// SoSoValue devolve). Enquanto o banco estiver vazio, usa os dias do /api/summary.
+let etfHistory = [], etfSummaryDays = [];
+
+function renderEtfChart() {
+  const days = etfHistory.length ? etfHistory.map((p) => ({ date: p.date, total: p.flow_usd_mi })) : etfSummaryDays;
+  if (!days.length) return;
+  upsertChart("etf", "etf-chart", {
+    type: "bar",
+    data: {
+      labels: days.map((d) => fmt.isoDay(d.date)),
+      datasets: [{ ...barDataset("Fluxo líquido", days.map((d) => (d.total >= 0 ? C.up : C.down)), days.map((d) => d.total)), barPercentage: 0.8, categoryPercentage: 0.9 }],
+    },
+    options: baseOptions({ yFormat: (v) => fmt.usdMi(v), xTicks: 8 }),
+  });
+  setText("etf-chart-range", `${days.length} pregões no histórico local`);
+}
+
 function renderEtf(e) {
   setMeta("etf", e);
   const has = !!e.last_day;
@@ -493,15 +515,8 @@ function renderEtf(e) {
   setText("etf-10d", fmt.usdMi(e.sum_10d));
   setText("etf-cum", e.cumulative_total == null ? "—" : fmt.usdMi(e.cumulative_total));
 
-  const days = e.days || [];
-  upsertChart("etf", "etf-chart", {
-    type: "bar",
-    data: {
-      labels: days.map((d) => fmt.isoDay(d.date)),
-      datasets: [{ ...barDataset("Fluxo líquido", days.map((d) => (d.total >= 0 ? C.up : C.down)), days.map((d) => d.total)), barPercentage: 0.8, categoryPercentage: 0.9 }],
-    },
-    options: baseOptions({ yFormat: (v) => fmt.usdMi(v), xTicks: 8 }),
-  });
+  etfSummaryDays = e.days || [];
+  renderEtfChart();
 
   const tbody = $("etf-table");
   tbody.replaceChildren();

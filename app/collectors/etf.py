@@ -44,8 +44,13 @@ def read_import(path: Path) -> dict:
     return data
 
 
-def _ts(day: str) -> int:
-    return int(datetime.fromisoformat(day).replace(tzinfo=timezone.utc).timestamp())
+def flow_rows(data: dict, source: str) -> list[tuple[str, str, float, str]]:
+    """Linhas do histórico local: total e cada ETF, só dias liquidados (valores não nulos)."""
+    rows = []
+    for day in data["by_day"]:
+        rows.append((day["date"], "TOTAL", day["total"], source))
+        rows.extend((day["date"], t, v, source) for t, v in day["by_ticker"].items() if v is not None)
+    return rows
 
 
 class EtfCollector(BaseCollector):
@@ -64,7 +69,7 @@ class EtfCollector(BaseCollector):
             try:
                 data = await sosovalue.fetch(self.http, self.api_key)
                 data.update(source="SoSoValue", source_kind="api", fallback=False)
-                return self._result(data)
+                return self._result(data, "SoSoValue")
             except (HttpError, CollectorError) as exc:
                 primary_error = str(exc)
                 log.warning("SoSoValue falhou, tentando importação manual", extra={"error": primary_error})
@@ -78,12 +83,14 @@ class EtfCollector(BaseCollector):
             )
         data = read_import(path)
         data.update(source="Farside (importação manual)", source_kind="import", fallback=True, primary_error=primary_error)
-        return self._result(data)
+        return self._result(data, "Farside")
 
     def cache_is_reusable(self, data: dict) -> bool:
         # cache vindo da importação manual não segura a coleta: a chave pode ter acabado de ser configurada
         return not data.get("fallback")
 
     @staticmethod
-    def _result(data: dict) -> CollectorResult:
-        return CollectorResult(data=data, series=[("etf.flow_total", _ts(d["date"]), d["total"]) for d in data["days"]])
+    def _result(data: dict, source: str) -> CollectorResult:
+        rows = flow_rows(data, source)
+        data.pop("by_day", None)  # detalhe por ETF vai para o SQLite, não para o cache do card
+        return CollectorResult(data=data, etf_flows=rows)

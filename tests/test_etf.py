@@ -72,7 +72,11 @@ async def test_uses_sosovalue_when_key_is_set(http, tmp_path):
     result = await EtfCollector(http, 43200, api_key=KEY, import_dir=tmp_path).collect()
 
     assert result.data["source"] == "SoSoValue" and result.data["fallback"] is False
-    assert len(result.series) == 10 and all(m == "etf.flow_total" for m, _, _ in result.series)
+    totals = [r for r in result.etf_flows if r[1] == "TOTAL"]
+    assert len(totals) == 10 and all(r[3] == "SoSoValue" for r in totals)
+    assert {r[1] for r in result.etf_flows} == {"TOTAL", *TICKERS}
+    assert not any(r[0] == "2026-10-19" for r in result.etf_flows)  # T+1 pendente fica fora
+    assert "by_day" not in result.data  # detalhe por ETF vai para o SQLite, não para o cache
     sent = respx.calls[0].request
     assert sent.headers["x-soso-api-key"] == KEY
 
@@ -162,3 +166,70 @@ async def test_restart_does_not_reuse_import_or_stale_cache(http, db, tmp_path):
     fresh = EtfCollector(http, 43200, api_key=KEY, import_dir=tmp_path)
     await run_collector(fresh, db)
     assert (await db.get_latest("etf"))["data"]["days"]  # cache vencido → coletou de novo
+
+
+# --- dia corrente (T+1) ---------------------------------------------------------------
+
+def _inputs():
+    summary = unwrap(load("sosovalue_summary_history.json"), "s")
+    tickers = unwrap(load("sosovalue_etfs.json"), "e")
+    histories = {t: unwrap(load(f"sosovalue_history_{t}.json"), t) for t in TICKERS}
+    return summary, tickers, histories
+
+
+def test_current_day_with_provisional_total_is_ignored():
+    # o resumo traz um total para 19/10, mas nenhum ETF tem fluxo nesse dia: ainda não liquidou
+    summary, tickers, histories = _inputs()
+    summary[0]["total_net_inflow"] = 123_000_000
+    d = parse(summary, tickers, histories)
+    assert d["last_day"]["date"] == "2026-10-16"
+    assert d["pending_dates"] == ["2026-10-19"]
+    assert d["sum_5d"] == pytest.approx(-225.6)
+
+
+def test_card_and_score_use_last_settled_day():
+    from app.services.regime import extract_inputs
+    from app.services.summary import build_summary
+
+    summary, tickers, histories = _inputs()
+    data = parse(summary, tickers, histories)
+    data.pop("by_day")
+    now = time.time()
+    latest = {"etf": {"data": data, "fetched_at": now, "last_attempt": now, "ok": True, "error": None}}
+    s = build_summary(latest, [EtfCollector(None, 43200, api_key="", import_dir=Path("."))], now=now)
+
+    assert s["etf"]["last_day"]["date"] == "2026-10-16"
+    assert s["etf"]["pending_dates"] == ["2026-10-19"]
+    assert extract_inputs(s)["etf_5d"] == pytest.approx(-225.6)  # 12 a 16/10, sem o dia 19
+
+
+# --- histórico local no SQLite -----------------------------------------------------------
+
+async def test_etf_history_upsert_does_not_duplicate_and_prefers_sosovalue(db):
+    await db.upsert_etf_flows([("2026-10-16", "TOTAL", -82.4, "SoSoValue")])
+    await db.upsert_etf_flows([("2026-10-16", "TOTAL", -82.4, "SoSoValue"), ("2026-10-15", "TOTAL", 16.8, "SoSoValue")])
+    # importação manual não sobrescreve um dia que já veio da SoSoValue, mas preenche dias novos
+    await db.upsert_etf_flows([("2026-10-16", "TOTAL", -80.0, "Farside"), ("2026-10-14", "TOTAL", -263.6, "Farside")])
+
+    rows = await db.get_etf_flows("2026-01-01")
+    assert rows == [
+        {"date": "2026-10-14", "flow_usd_mi": -263.6, "source": "Farside"},
+        {"date": "2026-10-15", "flow_usd_mi": 16.8, "source": "SoSoValue"},
+        {"date": "2026-10-16", "flow_usd_mi": -82.4, "source": "SoSoValue"},
+    ]
+    # e a SoSoValue corrige um dia que veio da importação
+    await db.upsert_etf_flows([("2026-10-14", "TOTAL", -263.0, "SoSoValue")])
+    assert (await db.get_etf_flows("2026-10-14"))[0] == {"date": "2026-10-14", "flow_usd_mi": -263.0, "source": "SoSoValue"}
+
+
+@respx.mock
+async def test_scheduler_persists_settled_days(http, db, tmp_path):
+    mock_sosovalue()
+    collector = EtfCollector(http, 43200, api_key=KEY, import_dir=tmp_path)
+    await run_collector(collector, db)
+    await run_collector(collector, db)  # 2ª coleta com os mesmos dias
+
+    totals = await db.get_etf_flows("2026-01-01")
+    assert len(totals) == 10  # sem duplicar
+    assert totals[-1]["date"] == "2026-10-16"
+    assert len(await db.get_etf_flows("2026-01-01", "IBIT")) == 10

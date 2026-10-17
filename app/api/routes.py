@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import date, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -26,7 +27,6 @@ ALLOWED_SERIES = {
     "bybit.oi_usd",
     "okx.funding_rate",
     "okx.oi_usd",
-    "etf.flow_total",
     "stables.total_usd",
     "mempool.hashrate_ehs",
     "cm.mvrv",
@@ -65,6 +65,13 @@ async def series(request: Request, metric: str, days: int = Query(30, ge=1, le=7
     since = int(time.time()) - days * 86400
     points = await request.app.state.db.get_series(metric, since_ts=since)
     return {"metric": metric, "points": [{"ts": ts, "value": v} for ts, v in points]}
+
+
+@router.get("/etf-flows", summary="Histórico local do fluxo diário dos ETFs de BTC à vista (US$ mi)")
+async def etf_flows(request: Request, days: int = Query(90, ge=1, le=3650), ticker: str = Query("TOTAL", max_length=10)) -> dict:
+    since = (date.today() - timedelta(days=days)).isoformat()
+    rows = await request.app.state.db.get_etf_flows(since, ticker.upper())
+    return {"ticker": ticker.upper(), "unit": "US$ mi", "points": rows}
 
 
 @router.get("/health", summary="Status de cada coletor")
