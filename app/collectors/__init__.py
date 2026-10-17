@@ -14,6 +14,7 @@ from app.collectors.farside import FarsideCollector
 from app.collectors.fear_greed import FearGreedCollector
 from app.collectors.fred import FredCollector
 from app.collectors.mempool import MempoolCollector
+from app.collectors.news import NewsCollector
 from app.collectors.okx import OkxCollector
 from app.collectors.stablecoins import StablecoinsCollector
 from app.config import Settings
@@ -37,4 +38,5 @@ def build_collectors(http: HttpClient, s: Settings) -> list[BaseCollector]:
         StablecoinsCollector(http, s.interval_stablecoins),
         MempoolCollector(http, s.interval_mempool),
         CoinMetricsCollector(http, s.interval_onchain),
+        NewsCollector(http, s.interval_news),
     ]

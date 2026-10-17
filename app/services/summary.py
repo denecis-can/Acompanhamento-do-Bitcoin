@@ -209,6 +209,7 @@ def build_summary(
         "onchain": onchain,
         "sentiment": sentiment,
         "macro": macro,
+        "news": _section(sources, "news", data("news")),
         "sources": sources,
     }
 
