@@ -12,6 +12,7 @@ from app.collectors.deribit_options import DeribitOptionsCollector
 from app.collectors.fear_greed import FearGreedCollector
 from app.collectors.fred import FredCollector
 from app.collectors.okx import OkxCollector
+from app.collectors.stablecoins import StablecoinsCollector
 from app.config import Settings
 from app.core.http import HttpClient
 
@@ -29,4 +30,5 @@ def build_collectors(http: HttpClient, s: Settings) -> list[BaseCollector]:
         DeribitOptionsCollector(http, s.interval_volatility),
         FearGreedCollector(http, s.interval_sentiment),
         FredCollector(http, s.interval_macro, api_key=s.fred_api_key),
+        StablecoinsCollector(http, s.interval_stablecoins),
     ]

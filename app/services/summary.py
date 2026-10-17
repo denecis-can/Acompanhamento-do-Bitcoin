@@ -162,6 +162,9 @@ def build_summary(
     options = _section(sources, "deribit_options", {k: v for k, v in opt.items() if k != "basis"} if opt else None)
     basis = _section(sources, "deribit_options", opt["basis"] if opt else None, source="Deribit Futures")
 
+    # --- fluxos: stablecoins ------------------------------------------------
+    stablecoins = _section(sources, "stablecoins", data("stablecoins"))
+
     # --- tendência (candles diários e semanais do banco) ---------------------
     trend = None
     if candles.get("1d"):
@@ -194,6 +197,7 @@ def build_summary(
         "trend": trend,
         "options": options,
         "basis": basis,
+        "stablecoins": stablecoins,
         "sentiment": sentiment,
         "macro": macro,
         "sources": sources,

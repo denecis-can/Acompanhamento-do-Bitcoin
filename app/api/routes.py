@@ -26,6 +26,7 @@ ALLOWED_SERIES = {
     "bybit.oi_usd",
     "okx.funding_rate",
     "okx.oi_usd",
+    "stables.total_usd",
     "fred.DGS10",
     "fred.DGS2",
     "fred.DTWEXBGS",
