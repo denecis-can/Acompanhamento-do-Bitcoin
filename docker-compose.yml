@@ -1,0 +1,14 @@
+services:
+  dashboard:
+    build: .
+    container_name: btc-dashboard
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_PATH: /app/data/btc_dashboard.db
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
