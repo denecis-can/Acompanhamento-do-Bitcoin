@@ -31,6 +31,11 @@ class Settings:
     interval_volatility: int
     interval_sentiment: int
     interval_macro: int
+    interval_etf: int
+    interval_stablecoins: int
+    interval_mempool: int
+    interval_onchain: int
+    interval_news: int
 
 
 @lru_cache
@@ -49,4 +54,9 @@ def get_settings() -> Settings:
         interval_volatility=_int("INTERVAL_VOLATILITY", 900),
         interval_sentiment=_int("INTERVAL_SENTIMENT", 3600),
         interval_macro=_int("INTERVAL_MACRO", 43200),
+        interval_etf=_int("INTERVAL_ETF", 14400),
+        interval_stablecoins=_int("INTERVAL_STABLECOINS", 21600),
+        interval_mempool=_int("INTERVAL_MEMPOOL", 600),
+        interval_onchain=_int("INTERVAL_ONCHAIN", 21600),
+        interval_news=_int("INTERVAL_NEWS", 900),
     )

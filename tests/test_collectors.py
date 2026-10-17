@@ -27,7 +27,7 @@ async def test_binance_spot(http):
     raw = load("binance_ticker24h.json")
     assert result.data["price"] == float(raw["lastPrice"])
     assert result.data["host"] == "api.binance.com"
-    assert [b.interval for b in result.candles] == ["1h", "1d"]
+    assert [b.interval for b in result.candles] == ["1h", "1d", "1w"]
     first = result.candles[0].rows[0]
     assert isinstance(first[0], int) and len(first) == 6
 
@@ -58,6 +58,7 @@ async def test_binance_futures(http):
     respx.get(host="fapi.binance.com", path="/futures/data/globalLongShortAccountRatio").respond(
         json=load("binance_long_short.json")
     )
+    respx.get(host="fapi.binance.com", path="/fapi/v1/fundingRate").respond(json=load("binance_funding_history.json"))
 
     result = await BinanceFuturesCollector(http, 300).collect()
 
@@ -68,6 +69,9 @@ async def test_binance_futures(http):
     assert d["oi_usd"] == pytest.approx(float(oi["openInterest"]) * float(premium["markPrice"]))
     assert d["oi_usd_24h_ago"] == float(load("binance_oi_hist.json")[0]["sumOpenInterestValue"])
     assert d["long_account_pct"] + d["short_account_pct"] == pytest.approx(100)
+    hist = [float(h["fundingRate"]) for h in load("binance_funding_history.json")]
+    assert d["funding_30d_mean"] == pytest.approx(sum(hist) / len(hist))
+    assert d["funding_zscore"] is not None
     assert {m for m, _, _ in result.series} == {
         "binance.funding_rate",
         "binance.oi_usd",

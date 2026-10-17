@@ -41,8 +41,19 @@ def _meta(sources: dict, name: str) -> dict:
     return {"source": s["source"], "status": s["status"], "updated_at": s["updated_at"]}
 
 
-def build_summary(latest: dict[str, dict], collectors: list[BaseCollector], now: float | None = None) -> dict[str, Any]:
+def closed_closes(candles: list[dict], interval_ms: int, now: float) -> list[float]:
+    """Fechamentos só de candles já encerrados (o candle em andamento distorce médias e volatilidade)."""
+    return [c["close"] for c in candles if c["open_time"] + interval_ms <= now * 1000]
+
+
+def build_summary(
+    latest: dict[str, dict],
+    collectors: list[BaseCollector],
+    now: float | None = None,
+    candles: dict[str, list[dict]] | None = None,
+) -> dict[str, Any]:
     now = now or time.time()
+    candles = candles or {}
     sources = build_sources(latest, collectors, now)
 
     def data(name: str) -> dict | None:
@@ -81,6 +92,7 @@ def build_summary(latest: dict[str, dict], collectors: list[BaseCollector], now:
         }
 
     # --- derivativos -------------------------------------------------------
+    bf = data("binance_futures")
     per_exchange = {}
     for name in ("binance_futures", "bybit", "okx"):
         d = data(name)
@@ -93,7 +105,15 @@ def build_summary(latest: dict[str, dict], collectors: list[BaseCollector], now:
                 "oi_btc": d.get("oi_btc"),
             }
 
-    bf = data("binance_futures")
+    funding_context = None
+    if bf and bf.get("funding_zscore") is not None:
+        funding_context = {
+            "exchange": "Binance",
+            "current_pct": bf["funding_rate"] * 100,
+            "mean_30d_pct": bf["funding_30d_mean"] * 100,
+            "zscore": bf["funding_zscore"],
+        }
+
     oi_change = None
     if bf:
         oi_change = {
@@ -108,6 +128,7 @@ def build_summary(latest: dict[str, dict], collectors: list[BaseCollector], now:
             (n, latest[n]["data"]["funding_rate"], latest[n]["data"]["oi_usd"]) for n in per_exchange
         ),
         "open_interest": oi_change,
+        "funding_context": funding_context,
         "long_short": (
             {
                 **_meta(sources, "binance_futures"),
@@ -125,6 +146,20 @@ def build_summary(latest: dict[str, dict], collectors: list[BaseCollector], now:
     dvol = data("deribit")
     volatility = {**_meta(sources, "deribit"), **(dvol or {})}
 
+    # --- tendência (candles diários e semanais do banco) ---------------------
+    trend = None
+    if candles.get("1d"):
+        trend = {
+            **_meta(sources, "binance_spot"),
+            "source": "Binance Spot (candles)",
+            **indicators.trend_metrics(
+                closed_closes(candles["1d"], 86_400_000, now),
+                closed_closes(candles.get("1w", []), 7 * 86_400_000, now),
+                price["value"],
+                dvol["dvol"] if dvol else None,
+            ),
+        }
+
     fg = data("fear_greed")
     sentiment = {**_meta(sources, "fear_greed"), **(fg or {})}
 
@@ -140,6 +175,7 @@ def build_summary(latest: dict[str, dict], collectors: list[BaseCollector], now:
         "coinbase_premium": premium,
         "derivatives": derivatives,
         "volatility": volatility,
+        "trend": trend,
         "sentiment": sentiment,
         "macro": macro,
         "sources": sources,
@@ -147,4 +183,8 @@ def build_summary(latest: dict[str, dict], collectors: list[BaseCollector], now:
 
 
 async def get_summary(db: Database, collectors: list[BaseCollector]) -> dict[str, Any]:
-    return build_summary(await db.get_latest_all(), collectors)
+    candles = {
+        "1d": await db.get_candles("BTCUSDT", "1d", 400),
+        "1w": await db.get_candles("BTCUSDT", "1w", 210),
+    }
+    return build_summary(await db.get_latest_all(), collectors, candles=candles)

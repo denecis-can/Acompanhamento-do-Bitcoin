@@ -32,11 +32,21 @@ HOST_MIN_INTERVAL = {
     "api.exchange.coinbase.com": 0.2,
     "api.alternative.me": 1.0,
     "api.stlouisfed.org": 0.6,  # FRED: 120 req/min
+    "www.federalreserve.gov": 2.0,
+    "farside.co.uk": 5.0,  # scraping: uma página por coleta, sem pressa
+    "mempool.space": 0.5,
+    "community-api.coinmetrics.io": 1.0,  # plano gratuito: 10 req a cada 6 s
+    "stablecoins.llama.fi": 1.0,
 }
 
 DEFAULT_MIN_INTERVAL = 0.2
 
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+# Teto para respostas lidas como texto (HTML/XML de terceiros).
+MAX_TEXT_BYTES = 5 * 1024 * 1024
+
+TEXT_ACCEPT = "text/html,application/xhtml+xml,application/rss+xml,application/xml;q=0.9,*/*;q=0.8"
 
 
 @lru_cache
@@ -128,3 +138,10 @@ class HttpClient:
             return resp.json()
         except ValueError as exc:
             raise HttpError(f"{url}: resposta não é JSON válido") from exc
+
+    async def get_text(self, url: str, params: dict[str, Any] | None = None, **kwargs: Any) -> str:
+        """GET para HTML/XML. Recusa respostas acima de MAX_TEXT_BYTES."""
+        resp = await self.request("GET", url, params=params, headers={"Accept": TEXT_ACCEPT}, **kwargs)
+        if len(resp.content) > MAX_TEXT_BYTES:
+            raise HttpError(f"{url}: resposta grande demais ({len(resp.content)} bytes)")
+        return resp.text

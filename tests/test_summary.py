@@ -121,3 +121,30 @@ def test_summary_uses_stale_cache_after_failure(latest, collectors):
 
     assert s["price"]["status"] == "atrasado"
     assert s["price"]["value"] == 80_000.0
+
+
+def test_summary_trend_uses_only_closed_candles(latest, collectors):
+    day = 86_400_000
+    now_ms = int(NOW * 1000)
+    # 200 candles fechados a 100 e um candle aberto (hoje) a 1.000.000, que deve ser ignorado
+    daily = [{"open_time": now_ms - (201 - i) * day, "close": 100.0} for i in range(200)]
+    daily.append({"open_time": now_ms - day // 2, "close": 1_000_000.0})
+
+    s = build_summary(latest, collectors, now=NOW, candles={"1d": daily, "1w": []})
+
+    t = s["trend"]
+    assert t["sma_200d"] == 100.0
+    assert t["mayer_multiple"] == pytest.approx(800.0)  # preço 80.000 / 100
+    assert t["realized_vol_30d"] == pytest.approx(0.0)
+    assert t["iv_rv_spread"] == pytest.approx(40.0)
+    assert t["sma_200w"] is None
+
+
+def test_summary_without_candles_has_no_trend(latest, collectors):
+    assert build_summary(latest, collectors, now=NOW)["trend"] is None
+
+
+def test_summary_funding_context(latest, collectors):
+    latest["binance_futures"]["data"].update(funding_30d_mean=0.00005, funding_zscore=1.5)
+    ctx = build_summary(latest, collectors, now=NOW)["derivatives"]["funding_context"]
+    assert ctx == {"exchange": "Binance", "current_pct": 0.01, "mean_30d_pct": 0.005, "zscore": 1.5}

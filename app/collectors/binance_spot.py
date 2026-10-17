@@ -16,7 +16,7 @@ log = logging.getLogger("collector.binance_spot")
 HOSTS = ("https://api.binance.com", "https://data-api.binance.vision")
 SYMBOL = "BTCUSDT"
 # intervalo → (limite na carga inicial, limite nas coletas seguintes)
-CANDLE_INTERVALS = {"1h": (500, 3), "1d": (400, 2)}
+CANDLE_INTERVALS = {"1h": (500, 3), "1d": (400, 2), "1w": (210, 2)}  # 1w: média de 200 semanas
 
 
 def parse_ticker(raw: dict) -> dict:
