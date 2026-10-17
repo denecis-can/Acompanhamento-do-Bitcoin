@@ -1,10 +1,20 @@
-"""FRED (Federal Reserve Bank of St. Louis): séries macro e calendário de divulgações."""
+"""FRED (Federal Reserve Bank of St. Louis): séries macro e calendário de divulgações.
+
+As datas das reuniões do FOMC não estão no FRED (o release "FOMC Press Release" é
+marcado todo dia); vêm do calendário oficial em federalreserve.gov. Se essa página
+falhar, o card segue com as demais divulgações.
+"""
 
 from __future__ import annotations
 
+import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 
 from app.collectors.base import BaseCollector, CollectorError, CollectorResult
+from app.core.http import HttpError
+
+log = logging.getLogger("collector.fred")
 
 BASE = "https://api.stlouisfed.org/fred"
 
@@ -18,17 +28,22 @@ SERIES = {
     "NASDAQCOM": "Nasdaq Composite",
 }
 
-# Divulgações que costumam mexer com ativos de risco. Filtramos por nome porque é
-# mais estável que IDs numéricos.
-KEY_RELEASES = (
-    "Consumer Price Index",
-    "Employment Situation",
-    "Gross Domestic Product",
-    "Personal Income and Outlays",
-    "Producer Price Index",
-    "H.15 Selected Interest Rates",
-    "H.6 Money Stock Measures",
-)
+# Divulgações que costumam mexer com ativos de risco, pelo release_id do FRED. Filtrar
+# por nome pegava variantes regionais ("Gross Domestic Product by State") e a H.15, que
+# é diária e lotava a lista.
+KEY_RELEASES = {
+    10: "CPI (inflação ao consumidor)",
+    46: "PPI (inflação ao produtor)",
+    50: "Payroll (relatório de emprego)",
+    53: "PIB",
+    54: "PCE (renda e gastos pessoais)",
+    192: "JOLTS (vagas de emprego)",
+    9: "Vendas no varejo",
+}
+
+FOMC_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+FOMC_LABEL = "Decisão do FOMC"
+MONTHS = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
 
 HISTORY_DAYS = 400
 
@@ -56,19 +71,44 @@ def summarize(series_id: str, obs: list[tuple[str, float]]) -> dict:
     }
 
 
-def parse_releases(raw: dict, limit: int = 8) -> list[dict]:
-    seen: set[tuple[str, str]] = set()
+def parse_releases(raw: dict) -> list[dict]:
+    seen: set[tuple[int, str]] = set()
     out = []
     for r in raw.get("release_dates", []):
-        name = r.get("release_name", "")
-        if not any(k.lower() in name.lower() for k in KEY_RELEASES):
+        rid = int(r.get("release_id", 0))
+        if rid not in KEY_RELEASES or (rid, r["date"]) in seen:
             continue
-        key = (name, r["date"])
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append({"name": name, "date": r["date"]})
-    return sorted(out, key=lambda x: x["date"])[:limit]
+        seen.add((rid, r["date"]))
+        out.append({"name": KEY_RELEASES[rid], "date": r["date"]})
+    return sorted(out, key=lambda x: x["date"])
+
+
+def parse_fomc(html: str) -> list[dict]:
+    """Reuniões do FOMC (dia da decisão) a partir de fomccalendars.htm.
+
+    Cada ano é um painel "YYYY FOMC Meetings" com pares mês/dias ("April/May" e "30-1"
+    em reuniões que viram o mês). "*" marca reunião com projeções econômicas (SEP).
+    """
+    years = list(re.finditer(r"(\d{4}) FOMC Meetings", html))
+    if not years:
+        raise CollectorError("calendário do FOMC não encontrado (layout mudou?)")
+    out = []
+    for i, m in enumerate(years):
+        segment = html[m.end(): years[i + 1].start() if i + 1 < len(years) else len(html)]
+        months = re.findall(r"fomc-meeting__month[^>]*>\s*<strong>([^<]+)</strong>", segment)
+        days = re.findall(r"fomc-meeting__date[^>]*>([^<]+)<", segment)
+        for month, day in zip(months, days):
+            dm = re.fullmatch(r"\s*(\d{1,2})(?:-(\d{1,2}))?(\*?)\s*", day)
+            mon = MONTHS.get(month.strip().split("/")[-1][:3].lower())
+            if not dm or not mon:
+                continue  # notação de voto, reunião extraordinária etc.
+            last_day = int(dm.group(2) or dm.group(1))
+            out.append({"name": FOMC_LABEL, "date": date(int(m.group(1)), mon, last_day).isoformat(), "sep": bool(dm.group(3))})
+    return sorted(out, key=lambda x: x["date"])
+
+
+def upcoming(events: list[dict], today: date, limit: int = 10) -> list[dict]:
+    return [e for e in sorted(events, key=lambda x: x["date"]) if e["date"] >= today.isoformat()][:limit]
 
 
 class FredCollector(BaseCollector):
@@ -111,7 +151,15 @@ class FredCollector(BaseCollector):
             },
         )
 
-        data = {"series": series_out, "upcoming_releases": parse_releases(releases_raw)}
+        events = parse_releases(releases_raw)
+        data = {"series": series_out}
+        try:
+            fomc = parse_fomc(await self.http.get_text(FOMC_URL))
+            events += [e for e in fomc if e["date"] <= (today + timedelta(days=45)).isoformat()]
+        except (HttpError, CollectorError) as exc:
+            data["fomc_error"] = str(exc)
+            log.warning("calendário do FOMC indisponível", extra={"error": str(exc)})
+        data["upcoming_releases"] = upcoming(events, today)
         if "DGS10" in series_out and "DGS2" in series_out:
             data["spread_2s10s"] = series_out["DGS10"]["value"] - series_out["DGS2"]["value"]
         return CollectorResult(data=data, series=points)
