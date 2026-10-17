@@ -83,7 +83,8 @@ def _detail_lines(fire: Fire) -> list[str]:
 def alert_message(fire: Fire, summary: dict[str, Any], now: float, tz: ZoneInfo, dashboard_url: str, demo: bool) -> tuple[str, dict[str, Any]]:
     """(HTML do Telegram, payload JSON) de um disparo."""
     ctx = context(summary)
-    lines = [("[DEMO] " if demo else "") + f"<b>{html.escape(fire.rule.name)}</b>", *_detail_lines(fire)]
+    details = _detail_lines(fire)
+    lines = [("[DEMO] " if demo else "") + f"<b>{html.escape(fire.rule.name)}</b>", *details]
     if fire.rule.description:
         lines.append(f"<i>{html.escape(fire.rule.description)}</i>")
     if line := context_line(ctx):
@@ -103,7 +104,79 @@ def alert_message(fire: Fire, summary: dict[str, Any], now: float, tz: ZoneInfo,
         "fired_at": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(timespec="seconds"),
         "fired_at_local": datetime.fromtimestamp(now, tz=tz).isoformat(timespec="seconds"),
         "message": plain(text),
+        "headline": plain(details[0]),
         "context": ctx,
+        "dashboard_url": dashboard_url,
+        "demo": demo,
+    }
+    return text, payload
+
+
+def _component_value(c: dict[str, Any]) -> str:
+    if c["unit"] == "×":
+        return br(c["value"], 2) + "×"
+    return fmt_value(c["value"], c["unit"])
+
+
+def daily_message(summary: dict[str, Any], alerts: list[dict], now: float, tz: ZoneInfo, dashboard_url: str, demo: bool) -> tuple[str, dict[str, Any]]:
+    """Resumo diário: score e componentes, preço, funding, DVOL, ETFs e alertas das últimas 24h."""
+    e = html.escape
+
+    def g(path: str) -> Any:
+        return get_path(summary, path)
+
+    lines = [("[DEMO] " if demo else "") + f"<b>Resumo diário — BTC</b> · {datetime.fromtimestamp(now, tz=tz).strftime('%d/%m/%Y')}", ""]
+
+    regime = summary.get("regime") or {}
+    if regime.get("score") is not None:
+        lines.append(f"Temperatura do mercado: <b>{signed(regime['score'], 0)}</b> ({e(regime['label'])})")
+        for c in regime.get("components", []):
+            lines.append(f"• {e(c['label'])}: {_component_value(c)} (nota {signed(c['contribution'], 2)})")
+        if regime.get("missing"):
+            lines.append(f"<i>Sem dados: {e(', '.join(regime['missing']))}</i>")
+    else:
+        lines.append("Temperatura do mercado: dados insuficientes")
+    lines.append("")
+
+    if g("price.value") is not None:
+        change = g("price.change_24h_pct")
+        lines.append(f"Preço: <b>US$ {br(g('price.value'), 0)}</b>" + (f" ({signed(change, 2)}% em 24h)" if change is not None else ""))
+    wf = g("derivatives.weighted_funding")
+    if wf:
+        lines.append(f"Funding médio ponderado: {signed(wf['rate_pct'], 4)}% por 8h (≈ {signed(wf['annualized_pct'], 1)}% ao ano)")
+    if g("volatility.dvol") is not None:
+        change = g("volatility.dvol_change_24h")
+        lines.append(f"DVOL: {br(g('volatility.dvol'), 2)}" + (f" ({signed(change, 2)} pts em 24h)" if change is not None else ""))
+    last = g("etf.last_day")
+    if last:
+        day = datetime.fromisoformat(last["date"]).strftime("%d/%m")
+        lines.append(f"ETFs ({day}, último dia liquidado): {fmt_value(last['total'], 'US$ mi')} · "
+                     f"5 pregões: {fmt_value(g('etf.sum_5d'), 'US$ mi')} · fonte: {e(str(g('etf.source')))}")
+    lines.append("")
+
+    lines.append(f"Alertas nas últimas 24h: {len(alerts) or 'nenhum'}")
+    for a in alerts[:10]:
+        p = a["payload"]
+        lines.append(f"• {local_time(a['fired_at'], tz)} {e(p['rule']['name'])} — {e(p.get('headline', ''))}")
+    if len(alerts) > 10:
+        lines.append(f"• … e mais {len(alerts) - 10}")
+    lines.append(e(dashboard_url))
+
+    text = "\n".join(lines)
+    payload = {
+        "schema": SCHEMA,
+        "event_id": str(uuid.uuid4()),
+        "type": "daily_summary",
+        "sent_at": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(timespec="seconds"),
+        "sent_at_local": datetime.fromtimestamp(now, tz=tz).isoformat(timespec="seconds"),
+        "message": plain(text),
+        "regime": {k: regime.get(k) for k in ("score", "label", "components", "missing")},
+        "price": {"value": g("price.value"), "change_24h_pct": g("price.change_24h_pct")},
+        "funding": {"rate_pct": wf["rate_pct"], "annualized_pct": wf["annualized_pct"]} if wf else None,
+        "dvol": {"value": g("volatility.dvol"), "change_24h": g("volatility.dvol_change_24h")},
+        "etf": {"last_day": last, "sum_5d": g("etf.sum_5d"), "source": g("etf.source")} if last else None,
+        "alerts_24h": [{"rule_id": a["payload"]["rule"]["id"], "name": a["payload"]["rule"]["name"],
+                        "value": a["payload"]["value"], "fired_at": a["payload"]["fired_at"], "status": a["status"]} for a in alerts],
         "dashboard_url": dashboard_url,
         "demo": demo,
     }

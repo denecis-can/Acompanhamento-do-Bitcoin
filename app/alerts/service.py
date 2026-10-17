@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from app.alerts.channels import Channel, DeliveryError, Message
 from app.alerts.engine import evaluate
-from app.alerts.messages import alert_message
+from app.alerts.messages import alert_message, daily_message
 from app.alerts.rules import Rule
 from app.collectors.base import BaseCollector
 from app.core.db import Database
@@ -28,6 +28,7 @@ log = logging.getLogger("alerts")
 MAX_ATTEMPTS = 5
 RETRY_WINDOW = 24 * 3600
 SENT, PARTIAL, FAILED, SUPPRESSED, NO_CHANNEL, DEMO = "enviado", "parcial", "falhou", "suprimido", "sem_canal", "demo"
+DAILY_KEY = "resumo-diario"
 
 
 def overall_status(deliveries: dict[str, str]) -> str:
@@ -86,6 +87,24 @@ class AlertService:
             log.info("alerta", extra={"rule": fire.key, "status": event["status"], "value": fire.value})
             events.append(event)
         return events
+
+    async def send_daily_summary(self, now: float | None = None, summary: dict[str, Any] | None = None) -> dict:
+        """Resumo diário para todos os canais configurados; registrado em alert_events."""
+        now = now or time.time()
+        summary = summary or await get_summary(self.db, self.collectors)
+        recent = [
+            e for e in await self.db.get_alert_events(now - 24 * 3600)
+            if e["kind"] == "alert" and e["status"] != SUPPRESSED
+        ]
+        text, payload = daily_message(summary, recent, now, self.tz, self.dashboard_url, self.demo)
+        deliveries, status = await self.deliver(Message(text, payload), tuple(self.channels))
+        event = {
+            "id": payload["event_id"], "rule_key": DAILY_KEY, "kind": "daily_summary", "fired_at": now,
+            "status": status, "message": text, "payload": payload, "deliveries": deliveries, "attempts": 1,
+        }
+        await self.db.insert_alert_event(event)
+        log.info("resumo diário", extra={"status": status, "alerts_24h": len(recent)})
+        return event
 
     async def deliver(self, message: Message, channel_names: tuple[str, ...] | list[str]) -> tuple[dict[str, str], str]:
         if self.demo:

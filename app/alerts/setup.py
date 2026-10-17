@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from app.alerts.channels import Channel, DemoChannel, N8nWebhookChannel, TelegramChannel
 from app.alerts.rules import RuleError, load_rules
@@ -48,12 +49,36 @@ def build_alert_service(settings: Settings, db: Database, collectors: list[BaseC
     return service
 
 
+def parse_hhmm(value: str) -> tuple[int, int] | None:
+    """'08:00' → (8, 0); vazio → None (resumo desativado)."""
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        hour, minute = (int(p) for p in value.split(":"))
+    except ValueError:
+        raise ValueError(f"DAILY_SUMMARY_TIME inválido: {value!r} (use HH:MM, ex.: 08:00)") from None
+    if not (0 <= hour < 24 and 0 <= minute < 60):
+        raise ValueError(f"DAILY_SUMMARY_TIME fora do intervalo: {value!r}")
+    return hour, minute
+
+
 def schedule_alert_jobs(scheduler: AsyncIOScheduler, service: AlertService, settings: Settings) -> None:
     now = datetime.now(timezone.utc)
     scheduler.add_job(
         service.run_cycle, "interval", seconds=settings.alerts_interval, id="alerts",
         next_run_time=now + timedelta(seconds=FIRST_CHECK_DELAY), max_instances=1, coalesce=True,
     )
+    try:
+        when = parse_hhmm(settings.daily_summary_time)
+    except ValueError as exc:
+        log.error("resumo diário desativado", extra={"error": str(exc)})
+        when = None
+    if when:
+        scheduler.add_job(
+            service.send_daily_summary, CronTrigger(hour=when[0], minute=when[1], timezone=ZoneInfo(settings.timezone)),
+            id="daily-summary", max_instances=1, coalesce=True, misfire_grace_time=3600,
+        )
     scheduler.add_job(
         service.retry_failed, "interval", seconds=RETRY_INTERVAL, id="alerts-retry",
         next_run_time=now + timedelta(seconds=RETRY_INTERVAL), max_instances=1, coalesce=True,

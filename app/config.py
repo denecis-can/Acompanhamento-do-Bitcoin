@@ -57,6 +57,7 @@ class Settings:
     alerts_interval: int
     timezone: str
     dashboard_url: str
+    daily_summary_time: str
 
 
 @lru_cache
@@ -90,4 +91,5 @@ def get_settings() -> Settings:
         alerts_interval=_int("ALERTS_INTERVAL", 60),
         timezone=os.getenv("TIMEZONE", "America/Sao_Paulo").strip() or "America/Sao_Paulo",
         dashboard_url=os.getenv("DASHBOARD_URL", "http://localhost:8000").strip().rstrip("/"),
+        daily_summary_time=os.getenv("DAILY_SUMMARY_TIME", "08:00"),
     )
