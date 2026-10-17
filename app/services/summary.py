@@ -8,7 +8,7 @@ from typing import Any
 
 from app.collectors.base import BaseCollector
 from app.core.db import Database
-from app.services import indicators
+from app.services import indicators, regime
 from app.services.status import compute_status, is_usable
 
 DISCLAIMER = "Ferramenta informativa. Não é recomendação de investimento."
@@ -194,7 +194,7 @@ def build_summary(
     if sources["fred"]["error"]:
         macro["error"] = sources["fred"]["error"]
 
-    return {
+    summary = {
         "generated_at": _iso(now),
         "disclaimer": DISCLAIMER,
         "price": price,
@@ -212,6 +212,8 @@ def build_summary(
         "news": _section(sources, "news", data("news")),
         "sources": sources,
     }
+    summary["regime"] = regime.compute_regime(regime.extract_inputs(summary))
+    return summary
 
 
 async def get_summary(db: Database, collectors: list[BaseCollector]) -> dict[str, Any]:

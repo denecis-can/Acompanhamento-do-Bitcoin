@@ -148,3 +148,10 @@ def test_summary_funding_context(latest, collectors):
     latest["binance_futures"]["data"].update(funding_30d_mean=0.00005, funding_zscore=1.5)
     ctx = build_summary(latest, collectors, now=NOW)["derivatives"]["funding_context"]
     assert ctx == {"exchange": "Binance", "current_pct": 0.01, "mean_30d_pct": 0.005, "zscore": 1.5}
+
+
+def test_summary_includes_regime(latest, collectors):
+    r = build_summary(latest, collectors, now=NOW)["regime"]
+    # no fixture há funding e Fear & Greed; abaixo do mínimo, então sem score, mas com a lista do que falta
+    assert r["available"] == 2 and r["score"] is None
+    assert "MVRV" in r["missing"]
