@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import ssl
 import time
+from functools import lru_cache
 from typing import Any
 from urllib.parse import urlparse
 
@@ -32,7 +34,17 @@ HOST_MIN_INTERVAL = {
     "api.stlouisfed.org": 0.6,  # FRED: 120 req/min
 }
 
+DEFAULT_MIN_INTERVAL = 0.2
+
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+
+@lru_cache
+def _ssl_context() -> ssl.SSLContext:
+    # Carregar o bundle de certificados custa ~1s no Windows; fazemos uma vez só.
+    import certifi
+
+    return ssl.create_default_context(cafile=certifi.where())
 
 
 class HttpError(Exception):
@@ -45,13 +57,14 @@ class HttpClient:
         timeout: float = 10.0,
         max_retries: int = 3,
         backoff_base: float = 0.5,
-        transport: httpx.AsyncBaseTransport | None = None,
+        throttle: bool = True,
     ) -> None:
         self._client = httpx.AsyncClient(
-            timeout=timeout, headers=DEFAULT_HEADERS, follow_redirects=True, transport=transport
+            timeout=timeout, headers=DEFAULT_HEADERS, follow_redirects=True, verify=_ssl_context()
         )
         self.max_retries = max_retries
         self.backoff_base = backoff_base
+        self.throttle = throttle
         self._locks: dict[str, asyncio.Lock] = {}
         self._last_call: dict[str, float] = {}
 
@@ -59,7 +72,9 @@ class HttpClient:
         await self._client.aclose()
 
     async def _throttle(self, host: str) -> None:
-        min_interval = HOST_MIN_INTERVAL.get(host, 0.2)
+        if not self.throttle:
+            return
+        min_interval = HOST_MIN_INTERVAL.get(host, DEFAULT_MIN_INTERVAL)
         lock = self._locks.setdefault(host, asyncio.Lock())
         async with lock:
             wait = self._last_call.get(host, 0.0) + min_interval - time.monotonic()
