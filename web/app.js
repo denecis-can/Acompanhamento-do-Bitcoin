@@ -690,6 +690,69 @@ async function loadSummary() {
   }
 }
 
+// ---------- alertas -----------------------------------------------------------------
+
+const ALERT_STATUS = {
+  enviado: "ok", parcial: "atrasado", falhou: "erro", suprimido: "pendente", sem_canal: "pendente", demo: "pendente",
+};
+
+function ruleState(rule) {
+  const states = Object.values(rule.states || {});
+  if (!states.length) return "aguardando 1ª leitura";
+  if (rule.type === "band_change") return `faixa: ${states[0].band || "—"}`;
+  const fired = states.filter((s) => !s.armed).length;
+  if (rule.type === "health") return fired ? `${fired} coletor(es) em falha` : "armada";
+  return fired ? "disparada (aguarda rearmar)" : "armada";
+}
+
+function lastFired(rule) {
+  const ts = Math.max(0, ...Object.values(rule.states || {}).map((s) => s.last_fired_at || 0));
+  return ts ? fmt.dateTime(new Date(ts * 1000).toISOString()) : "—";
+}
+
+async function loadAlerts() {
+  try {
+    const [cfg, ev] = await Promise.all([getJSON("/api/alerts"), getJSON("/api/alerts/events?hours=24")]);
+    const meta = $("alert-channels");
+    meta.replaceChildren();
+    if (!cfg.enabled) {
+      meta.append(badge("pendente", "alertas desativados"));
+    } else {
+      for (const [name, on] of Object.entries(cfg.channels)) {
+        meta.append(badge(cfg.demo ? "pendente" : on ? "ok" : "pendente", `${name === "n8n" ? "n8n" : "Telegram"}: ${cfg.demo ? "demo" : on ? "configurado" : "não configurado"}`));
+      }
+    }
+    setText("alert-daily", cfg.daily_summary_time ? `Resumo diário às ${cfg.daily_summary_time} (${cfg.timezone})` : "Resumo diário desativado");
+
+    const tbody = $("alert-rules");
+    tbody.replaceChildren();
+    for (const r of cfg.rules) {
+      tbody.append(row([[r.name, ""], [r.condition, "muted"], [ruleState(r), ""], [lastFired(r), "num"]]));
+    }
+
+    const ul = $("alert-events");
+    ul.replaceChildren();
+    if (!ev.events.length) {
+      const li = document.createElement("li");
+      li.className = "muted";
+      li.textContent = "Nenhum alerta nas últimas 24 horas.";
+      ul.append(li);
+    }
+    for (const e of ev.events) {
+      const li = document.createElement("li");
+      const when = document.createElement("time");
+      when.textContent = fmt.dateTime(new Date(e.fired_at * 1000).toISOString());
+      const title = document.createElement("b");
+      title.textContent = e.name;
+      const detail = document.createElement("span");
+      detail.className = "muted";
+      detail.textContent = e.headline || "";
+      li.append(when, title, detail, badge(ALERT_STATUS[e.status] || "pendente", e.status.replace("_", " ")));
+      ul.append(li);
+    }
+  } catch (e) { console.warn(e); }
+}
+
 // ---------- bootstrap -------------------------------------------------------------
 
 function start() {
@@ -697,7 +760,9 @@ function start() {
   loadSummary();
   loadCandles(true);
   loadSeries();
+  loadAlerts();
   setInterval(loadSummary, REFRESH_SUMMARY_MS);
+  setInterval(loadAlerts, REFRESH_SUMMARY_MS);
   setInterval(loadCandles, REFRESH_CANDLES_MS);
   setInterval(loadSeries, REFRESH_SERIES_MS);
 }

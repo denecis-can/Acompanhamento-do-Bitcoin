@@ -8,6 +8,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from app.config import get_settings
 from app.demo import BANNER
 from app.services.summary import build_sources, get_summary
 
@@ -75,6 +76,47 @@ async def etf_flows(request: Request, days: int = Query(90, ge=1, le=3650), tick
     since = (date.today() - timedelta(days=days)).isoformat()
     rows = await request.app.state.db.get_etf_flows(since, ticker.upper())
     return {"ticker": ticker.upper(), "unit": "US$ mi", "points": rows}
+
+
+@router.get("/alerts", summary="Regras de alerta, estado e canais configurados")
+async def alerts(request: Request) -> dict:
+    svc = getattr(request.app.state, "alerts", None)
+    if svc is None:
+        return {"enabled": False, "rules": [], "channels": {}}
+    states = await request.app.state.db.get_alert_states()
+    settings = get_settings()
+    rules = []
+    for r in svc.rules:
+        keys = [k for k in states if k == r.id or k.startswith(f"{r.id}:")]
+        rules.append({
+            "id": r.id, "name": r.name, "type": r.type, "condition": r.condition_text(),
+            "cooldown_seconds": r.cooldown, "channels": list(r.channels),
+            "states": {k: states[k] for k in keys},
+        })
+    return {
+        "enabled": True,
+        "demo": svc.demo,
+        "channels": svc.channel_status(),  # só se está configurado; nunca o valor
+        "daily_summary_time": settings.daily_summary_time or None,
+        "timezone": settings.timezone,
+        "rules": rules,
+    }
+
+
+@router.get("/alerts/events", summary="Alertas disparados e resumos diários recentes")
+async def alert_events(request: Request, hours: int = Query(24, ge=1, le=24 * 30)) -> dict:
+    rows = await request.app.state.db.get_alert_events(time.time() - hours * 3600)
+    return {
+        "events": [
+            {
+                "id": r["id"], "kind": r["kind"], "rule_key": r["rule_key"], "status": r["status"],
+                "fired_at": r["fired_at"], "deliveries": r["deliveries"], "attempts": r["attempts"],
+                "name": (r["payload"].get("rule") or {}).get("name") or "Resumo diário",
+                "headline": r["payload"].get("headline"),
+            }
+            for r in rows
+        ]
+    }
 
 
 @router.get("/health", summary="Status de cada coletor")

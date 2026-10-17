@@ -62,7 +62,9 @@ class Rule:
 
     def condition_text(self) -> str:
         if self.type == "threshold":
-            return f"{self.op} {self.value:g}{(' ' + self.unit) if self.unit else ''}"
+            number = f"{self.value:g}".replace(".", ",").replace("-", "−")
+            unit = "" if not self.unit else self.unit if self.unit == "%" else f" {self.unit}"
+            return f"{self.op} {number}{unit}"
         if self.type == "band_change":
             return f"mudança de faixa (histerese {self.hysteresis:g} pts)"
         return f"{self.cycles} falhas seguidas"

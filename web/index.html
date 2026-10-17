@@ -16,7 +16,7 @@
     <div class="brand"><span class="logo">₿</span> BTC Dashboard</div>
     <nav class="toc" aria-label="Seções">
       <a href="#sec-mercado">Mercado</a><a href="#sec-derivativos">Derivativos</a><a href="#sec-fluxos">Fluxos</a>
-      <a href="#sec-onchain">On-chain</a><a href="#sec-macro">Macro</a><a href="#sec-noticias">Notícias</a>
+      <a href="#sec-onchain">On-chain</a><a href="#sec-macro">Macro</a><a href="#sec-noticias">Notícias</a><a href="#sec-alertas">Alertas</a>
     </nav>
     <div class="topbar-meta">
       <span id="overall-status" class="badge" data-status="pendente">carregando…</span>
@@ -367,6 +367,29 @@
         </header>
         <ul class="news" id="news-list"></ul>
         <p class="note" id="news-feeds"></p>
+      </section>
+    </div>
+
+    <!-- Alertas --------------------------------------------------------------------------->
+    <h2 class="section-title" id="sec-alertas">Alertas</h2>
+    <div class="grid">
+      <section class="card span-2" id="card-alert-rules">
+        <header class="card-head">
+          <h3>Regras</h3>
+          <div class="card-meta" id="alert-channels"></div>
+        </header>
+        <table class="table compact" aria-label="Regras de alerta">
+          <thead><tr><th>Regra</th><th>Condição</th><th>Estado</th><th class="num">Último envio</th></tr></thead>
+          <tbody id="alert-rules"></tbody>
+        </table>
+        <p class="note">Regras em <code>config/alerts.toml</code>. Disparo só ao cruzar o limite, com histerese para rearmar e cooldown por regra. Segredos dos canais ficam no <code>.env</code>.</p>
+      </section>
+      <section class="card span-2" id="card-alert-events">
+        <header class="card-head">
+          <h3>Últimas 24 horas</h3>
+          <div class="card-meta" id="alert-daily"></div>
+        </header>
+        <ul class="alert-events" id="alert-events"></ul>
       </section>
     </div>
   </main>
