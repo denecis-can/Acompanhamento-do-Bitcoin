@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BTC Dashboard</title>
-  <meta name="description" content="Monitoramento do Bitcoin: preço, derivativos, volatilidade, sentimento e macro.">
+  <meta name="description" content="Monitoramento do Bitcoin: preço, derivativos, opções, fluxos, on-chain, macro e notícias.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
   <link rel="stylesheet" href="styles.css">
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" defer></script>
@@ -14,137 +14,358 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="logo">₿</span> BTC Dashboard</div>
+    <nav class="toc" aria-label="Seções">
+      <a href="#sec-mercado">Mercado</a><a href="#sec-derivativos">Derivativos</a><a href="#sec-fluxos">Fluxos</a>
+      <a href="#sec-onchain">On-chain</a><a href="#sec-macro">Macro</a><a href="#sec-noticias">Notícias</a>
+    </nav>
     <div class="topbar-meta">
       <span id="overall-status" class="badge" data-status="pendente">carregando…</span>
       <span class="muted">Atualizado <time id="generated-at">—</time></span>
     </div>
   </header>
 
-  <main class="grid">
-    <!-- Preço -->
-    <section class="card span-2" id="card-price">
-      <header class="card-head">
-        <h2>Preço BTC/USDT</h2>
-        <div class="card-meta" data-meta="price"></div>
-      </header>
-      <div class="hero-row">
-        <div>
-          <div class="hero" id="price-value">—</div>
-          <div class="sub"><span id="price-change" class="delta">—</span> <span class="muted">24h</span></div>
+  <main>
+    <!-- Faixa de resumo: temperatura do mercado ------------------------------------------>
+    <section class="regime card" id="card-regime" aria-labelledby="regime-title">
+      <div class="regime-main">
+        <h2 id="regime-title">Temperatura do mercado</h2>
+        <div class="hero-inline">
+          <span class="hero hero-xl" id="regime-score">—</span>
+          <span class="pill" id="regime-label">—</span>
         </div>
-        <dl class="kv">
-          <div><dt>Máx. 24h</dt><dd id="price-high">—</dd></div>
-          <div><dt>Mín. 24h</dt><dd id="price-low">—</dd></div>
-          <div><dt>Volume 24h</dt><dd id="price-volume">—</dd></div>
-        </dl>
-        <div class="seg" role="tablist" aria-label="Intervalo dos candles">
-          <button class="seg-btn active" data-interval="1h" role="tab" aria-selected="true">1h</button>
-          <button class="seg-btn" data-interval="1d" role="tab" aria-selected="false">1d</button>
-        </div>
+        <div class="diverging-scale" aria-hidden="true"><span class="marker" id="regime-marker" hidden></span></div>
+        <div class="scale-labels muted"><span>−100 frio</span><span>0 neutro</span><span>+100 quente</span></div>
+        <p class="note" id="regime-coverage">—</p>
+        <details class="method">
+          <summary>Como é calculado</summary>
+          <p id="regime-method"></p>
+          <p>Cada componente vira uma nota de −1 a +1 por interpolação entre três âncoras fixas (frio → −1, neutro → 0, quente → +1). O score é a média simples × 100. Faixas: <span id="regime-bands"></span>.</p>
+        </details>
       </div>
-      <div class="ohlc muted" id="ohlc-legend">&nbsp;</div>
-      <div id="price-chart" class="chart chart-tall" aria-label="Gráfico de candles do BTCUSDT"></div>
-    </section>
-
-    <!-- Coinbase Premium -->
-    <section class="card" id="card-premium">
-      <header class="card-head">
-        <h2>Coinbase Premium</h2>
-        <div class="card-meta" data-meta="premium"></div>
-      </header>
-      <div class="hero" id="premium-usd">—</div>
-      <div class="sub"><span id="premium-pct" class="delta">—</span></div>
-      <dl class="kv">
-        <div><dt>Coinbase (USD)</dt><dd id="premium-cb">—</dd></div>
-        <div><dt>Binance (USDT)</dt><dd id="premium-bn">—</dd></div>
-      </dl>
-      <p class="note">Prêmio positivo sugere demanda americana mais forte. USDT ≠ USD: variações do USDT afetam o valor.</p>
-    </section>
-
-    <!-- Funding -->
-    <section class="card" id="card-funding">
-      <header class="card-head">
-        <h2>Funding rate</h2>
-        <div class="card-meta" data-meta="funding"></div>
-      </header>
-      <div class="hero" id="funding-weighted">—</div>
-      <div class="sub muted" id="funding-annual">—</div>
-      <table class="table compact" aria-label="Funding por exchange">
-        <thead><tr><th>Exchange</th><th class="num">Funding</th><th class="num">OI</th><th>Status</th></tr></thead>
-        <tbody id="funding-table"></tbody>
-      </table>
-      <p class="note">Média ponderada pelo open interest. Ciclo de 8h.</p>
-    </section>
-
-    <!-- Open interest + long/short -->
-    <section class="card" id="card-oi">
-      <header class="card-head">
-        <h2>Open interest</h2>
-        <div class="card-meta" data-meta="oi"></div>
-      </header>
-      <div class="hero" id="oi-total">—</div>
-      <div class="sub"><span id="oi-change" class="delta">—</span> <span class="muted">24h (Binance)</span></div>
-      <h3 class="mini-title">Long/short — contas Binance</h3>
-      <div class="ls-bar" aria-hidden="true"><span id="ls-long"></span><span id="ls-short"></span></div>
-      <div class="ls-labels">
-        <span><i class="key key-1"></i>Long <b id="ls-long-pct">—</b></span>
-        <span class="muted">razão <b id="ls-ratio">—</b></span>
-        <span>Short <b id="ls-short-pct">—</b><i class="key key-2"></i></span>
-      </div>
-    </section>
-
-    <!-- DVOL -->
-    <section class="card" id="card-dvol">
-      <header class="card-head">
-        <h2>DVOL — volatilidade implícita</h2>
-        <div class="card-meta" data-meta="volatility"></div>
-      </header>
-      <div class="hero-inline">
-        <span class="hero" id="dvol-value">—</span>
-        <span id="dvol-change" class="delta">—</span><span class="muted">pts 24h</span>
-      </div>
-      <div class="chart"><canvas id="dvol-chart" aria-label="DVOL nos últimos 7 dias"></canvas></div>
-    </section>
-
-    <!-- Fear & Greed -->
-    <section class="card" id="card-fng">
-      <header class="card-head">
-        <h2>Fear &amp; Greed</h2>
-        <div class="card-meta" data-meta="sentiment"></div>
-      </header>
-      <div class="hero-inline">
-        <span class="hero" id="fng-value">—</span>
-        <span id="fng-class" class="pill">—</span>
-      </div>
-      <div class="fng-scale" aria-hidden="true"><span id="fng-marker"></span></div>
-      <div class="fng-scale-labels muted"><span>0 medo extremo</span><span>100 ganância extrema</span></div>
-      <div class="chart chart-short"><canvas id="fng-chart" aria-label="Fear & Greed nos últimos 30 dias"></canvas></div>
-    </section>
-
-    <!-- Macro -->
-    <section class="card span-2" id="card-macro">
-      <header class="card-head">
-        <h2>Macro (EUA)</h2>
-        <div class="card-meta" data-meta="macro"></div>
-      </header>
-      <div id="macro-error" class="alert" hidden></div>
-      <div class="macro-layout">
-        <table class="table" aria-label="Indicadores macro">
-          <thead><tr><th>Série</th><th class="num">Último</th><th class="num">Var.</th><th>Data</th></tr></thead>
-          <tbody id="macro-table"></tbody>
+      <div class="regime-components">
+        <table class="table compact" aria-label="Componentes da temperatura do mercado">
+          <thead><tr><th>Componente</th><th class="num">Valor</th><th class="num">Frio · neutro · quente</th><th class="contrib-head">Nota (−1 a +1)</th></tr></thead>
+          <tbody id="regime-table"></tbody>
         </table>
-        <div>
-          <h3 class="mini-title">Juros dos Treasuries — 1 ano</h3>
-          <div class="chart">
-            <canvas id="yields-chart" aria-label="Juros de 2 e 10 anos"></canvas>
-            <div class="empty" id="yields-empty" hidden>Sem dados do FRED ainda.</div>
-          </div>
-          <div class="muted small">Spread 10a−2a: <b id="spread-2s10s">—</b></div>
-        </div>
+        <p class="note" id="regime-missing" hidden></p>
       </div>
-      <h3 class="mini-title">Próximas divulgações</h3>
-      <ul class="releases" id="releases"></ul>
     </section>
+
+    <!-- Mercado ---------------------------------------------------------------------------->
+    <h2 class="section-title" id="sec-mercado">Mercado</h2>
+    <div class="grid">
+      <section class="card span-2 row-2" id="card-price">
+        <header class="card-head">
+          <h3>Preço BTC/USDT</h3>
+          <div class="card-meta" data-meta="price"></div>
+        </header>
+        <div class="hero-row">
+          <div>
+            <div class="hero" id="price-value">—</div>
+            <div class="sub"><span id="price-change" class="delta">—</span> <span class="muted">24h</span></div>
+          </div>
+          <dl class="kv">
+            <div><dt>Máx. 24h</dt><dd id="price-high">—</dd></div>
+            <div><dt>Mín. 24h</dt><dd id="price-low">—</dd></div>
+            <div><dt>Volume 24h</dt><dd id="price-volume">—</dd></div>
+          </dl>
+          <div class="seg" role="tablist" aria-label="Intervalo dos candles">
+            <button class="seg-btn active" data-interval="1h" role="tab" aria-selected="true">1h</button>
+            <button class="seg-btn" data-interval="1d" role="tab" aria-selected="false">1d</button>
+          </div>
+        </div>
+        <div class="ohlc muted" id="ohlc-legend">&nbsp;</div>
+        <div id="price-chart" class="chart chart-fill" aria-label="Gráfico de candles do BTCUSDT"></div>
+      </section>
+
+      <section class="card" id="card-premium">
+        <header class="card-head">
+          <h3>Coinbase Premium</h3>
+          <div class="card-meta" data-meta="premium"></div>
+        </header>
+        <div class="hero" id="premium-usd">—</div>
+        <div class="sub"><span id="premium-pct" class="delta">—</span></div>
+        <dl class="kv">
+          <div><dt>Coinbase (USD)</dt><dd id="premium-cb">—</dd></div>
+          <div><dt>Binance (USDT)</dt><dd id="premium-bn">—</dd></div>
+        </dl>
+        <p class="note">Prêmio positivo sugere demanda americana mais forte. USDT ≠ USD: variações do USDT afetam o valor.</p>
+      </section>
+
+      <section class="card" id="card-fng">
+        <header class="card-head">
+          <h3>Fear &amp; Greed</h3>
+          <div class="card-meta" data-meta="sentiment"></div>
+        </header>
+        <div class="hero-inline">
+          <span class="hero" id="fng-value">—</span>
+          <span id="fng-class" class="pill">—</span>
+        </div>
+        <div class="diverging-scale" aria-hidden="true"><span class="marker" id="fng-marker"></span></div>
+        <div class="scale-labels muted"><span>0 medo extremo</span><span>100 ganância extrema</span></div>
+        <div class="chart chart-short"><canvas id="fng-chart" aria-label="Fear & Greed nos últimos 30 dias"></canvas></div>
+      </section>
+
+      <section class="card span-2" id="card-trend">
+        <header class="card-head">
+          <h3>Tendência e ciclo</h3>
+          <div class="card-meta" data-meta="trend"></div>
+        </header>
+        <dl class="kv kv-grid">
+          <div><dt>Mayer Multiple</dt><dd id="trend-mayer">—</dd></div>
+          <div><dt>Média 50 dias</dt><dd id="trend-sma50">—</dd></div>
+          <div><dt>Média 200 dias</dt><dd id="trend-sma200">—</dd></div>
+          <div><dt>Média 200 semanas</dt><dd id="trend-sma200w">—</dd></div>
+          <div><dt>Distância da média 200 sem.</dt><dd id="trend-dist200w">—</dd></div>
+          <div><dt>Vol. realizada 7d / 30d</dt><dd id="trend-rv">—</dd></div>
+        </dl>
+        <p class="note">Mayer Multiple = preço ÷ média de 200 dias (historicamente &lt; 0,8 em fundos e &gt; 2,4 em euforia). Só candles fechados entram nas médias.</p>
+      </section>
+    </div>
+
+    <!-- Derivativos ------------------------------------------------------------------------->
+    <h2 class="section-title" id="sec-derivativos">Derivativos</h2>
+    <div class="grid">
+      <section class="card" id="card-funding">
+        <header class="card-head">
+          <h3>Funding rate</h3>
+          <div class="card-meta" data-meta="funding"></div>
+        </header>
+        <div class="hero" id="funding-weighted">—</div>
+        <div class="sub muted" id="funding-annual">—</div>
+        <table class="table compact" aria-label="Funding por exchange">
+          <thead><tr><th>Exchange</th><th class="num">Funding</th><th class="num">OI</th><th>Status</th></tr></thead>
+          <tbody id="funding-table"></tbody>
+        </table>
+        <p class="note" id="funding-context">Média ponderada pelo open interest. Ciclo de 8h.</p>
+      </section>
+
+      <section class="card" id="card-oi">
+        <header class="card-head">
+          <h3>Open interest</h3>
+          <div class="card-meta" data-meta="oi"></div>
+        </header>
+        <div class="hero" id="oi-total">—</div>
+        <div class="sub"><span id="oi-change" class="delta">—</span> <span class="muted">24h (Binance)</span></div>
+        <h4 class="mini-title">Long/short — contas Binance</h4>
+        <div class="ls-bar" aria-hidden="true"><span id="ls-long"></span><span id="ls-short"></span></div>
+        <div class="ls-labels">
+          <span><i class="key key-1"></i>Long <b id="ls-long-pct">—</b></span>
+          <span class="muted">razão <b id="ls-ratio">—</b></span>
+          <span>Short <b id="ls-short-pct">—</b><i class="key key-2"></i></span>
+        </div>
+      </section>
+
+      <section class="card" id="card-basis">
+        <header class="card-head">
+          <h3>Basis dos futuros</h3>
+          <div class="card-meta" data-meta="basis"></div>
+        </header>
+        <div class="hero-inline">
+          <span class="hero" id="basis-headline">—</span><span class="muted">ao ano</span>
+        </div>
+        <div class="sub muted" id="basis-sub">—</div>
+        <div class="chart chart-short"><canvas id="basis-chart" aria-label="Basis anualizado por vencimento"></canvas></div>
+      </section>
+
+      <section class="card" id="card-dvol">
+        <header class="card-head">
+          <h3>DVOL — volatilidade implícita</h3>
+          <div class="card-meta" data-meta="volatility"></div>
+        </header>
+        <div class="hero-inline">
+          <span class="hero" id="dvol-value">—</span>
+          <span id="dvol-change" class="delta">—</span><span class="muted">pts 24h</span>
+        </div>
+        <div class="sub muted" id="dvol-rv">—</div>
+        <div class="chart chart-short"><canvas id="dvol-chart" aria-label="DVOL nos últimos 7 dias"></canvas></div>
+      </section>
+
+      <section class="card span-4" id="card-options">
+        <header class="card-head">
+          <h3>Opções BTC</h3>
+          <div class="card-meta" data-meta="options"></div>
+        </header>
+        <div id="options-error" class="alert" hidden></div>
+        <dl class="kv kv-wide">
+          <div><dt>Open interest total</dt><dd id="opt-oi">—</dd></div>
+          <div><dt>Put/call (OI)</dt><dd id="opt-pcr-oi">—</dd></div>
+          <div><dt>Put/call (volume 24h)</dt><dd id="opt-pcr-vol">—</dd></div>
+          <div><dt>Próximo vencimento relevante</dt><dd id="opt-major">—</dd></div>
+          <div><dt>Max pain desse vencimento</dt><dd id="opt-maxpain">—</dd></div>
+          <div><dt>IV no dinheiro (~30 dias)</dt><dd id="opt-atm">—</dd></div>
+          <div><dt>Skew 25Δ (~30 dias)</dt><dd id="opt-skew">—</dd></div>
+        </dl>
+        <div class="options-layout">
+          <div>
+            <h4 class="mini-title">Open interest por strike (todos os vencimentos, ±35% do spot) <span class="muted" id="opt-spot"></span></h4>
+            <div class="chart chart-mid"><canvas id="oi-strike-chart" aria-label="Open interest de calls e puts por strike"></canvas></div>
+          </div>
+          <div>
+            <h4 class="mini-title">Estrutura a termo da IV no dinheiro</h4>
+            <div class="chart chart-mid"><canvas id="iv-term-chart" aria-label="Volatilidade implícita no dinheiro por vencimento"></canvas></div>
+          </div>
+        </div>
+        <table class="table compact" aria-label="Vencimentos de opções">
+          <thead><tr><th>Vencimento</th><th class="num">Dias</th><th class="num">OI (US$)</th><th class="num">% do OI</th><th class="num">Put/call</th><th class="num">Max pain</th><th class="num">IV ATM</th><th class="num">Skew 25Δ</th></tr></thead>
+          <tbody id="opt-expiries"></tbody>
+        </table>
+        <p class="note">Skew positivo = puts (proteção contra queda) mais caras que calls de mesma distância. Delta calculado por Black-76 com a IV de marcação da Deribit. Max pain = strike em que o valor intrínseco pago no vencimento é mínimo.</p>
+      </section>
+    </div>
+
+    <!-- Fluxos ------------------------------------------------------------------------------>
+    <h2 class="section-title" id="sec-fluxos">Fluxos</h2>
+    <div class="grid">
+      <section class="card span-2" id="card-etf">
+        <header class="card-head">
+          <h3>ETFs de BTC à vista (EUA)</h3>
+          <div class="card-meta" data-meta="etf"></div>
+        </header>
+        <div id="etf-error" class="alert" hidden></div>
+        <div class="card-body" id="etf-body">
+        <div class="hero-row">
+          <div>
+            <div class="hero" id="etf-last">—</div>
+            <div class="sub muted" id="etf-last-date">—</div>
+          </div>
+          <dl class="kv">
+            <div><dt>5 pregões</dt><dd id="etf-5d">—</dd></div>
+            <div><dt>10 pregões</dt><dd id="etf-10d">—</dd></div>
+            <div><dt>Acumulado desde o lançamento</dt><dd id="etf-cum">—</dd></div>
+          </dl>
+        </div>
+        <div class="chart chart-short"><canvas id="etf-chart" aria-label="Fluxo líquido diário dos ETFs"></canvas></div>
+        <table class="table compact" aria-label="Fluxo por ETF">
+          <thead><tr><th>ETF</th><th>Emissor</th><th class="num">Último dia</th><th class="num">5 pregões</th><th class="num">Acumulado</th></tr></thead>
+          <tbody id="etf-table"></tbody>
+        </table>
+        </div>
+        <p class="note">Valores em US$ milhões, da tabela pública da Farside Investors. Dia ainda sem números fica como pendente.</p>
+      </section>
+
+      <section class="card span-2" id="card-stables">
+        <header class="card-head">
+          <h3>Stablecoins em dólar</h3>
+          <div class="card-meta" data-meta="stablecoins"></div>
+        </header>
+        <div class="hero-row">
+          <div>
+            <div class="hero" id="stables-total">—</div>
+            <div class="sub muted">oferta total</div>
+          </div>
+          <dl class="kv">
+            <div><dt>7 dias</dt><dd id="stables-7d" class="delta">—</dd></div>
+            <div><dt>30 dias</dt><dd id="stables-30d" class="delta">—</dd></div>
+          </dl>
+        </div>
+        <div class="chart chart-short"><canvas id="stables-chart" aria-label="Oferta total de stablecoins em dólar, 1 ano"></canvas></div>
+        <table class="table compact" aria-label="Principais stablecoins">
+          <thead><tr><th>Moeda</th><th class="num">Oferta</th><th class="num">Participação</th><th class="num">7 dias</th><th class="num">30 dias</th><th class="num">Preço</th></tr></thead>
+          <tbody id="stables-table"></tbody>
+        </table>
+        <p class="note">Oferta crescente costuma indicar liquidez entrando no mercado cripto. Fonte: DefiLlama.</p>
+      </section>
+    </div>
+
+    <!-- On-chain ---------------------------------------------------------------------------->
+    <h2 class="section-title" id="sec-onchain">On-chain</h2>
+    <div class="grid">
+      <section class="card" id="card-network">
+        <header class="card-head">
+          <h3>Rede</h3>
+          <div class="card-meta" data-meta="network"></div>
+        </header>
+        <div class="hero-inline"><span class="hero" id="net-hashrate">—</span><span class="muted">EH/s</span></div>
+        <div class="chart chart-short"><canvas id="hashrate-chart" aria-label="Hashrate diário, 3 meses"></canvas></div>
+        <dl class="kv kv-grid">
+          <div><dt>Próximo ajuste de dificuldade</dt><dd id="net-diff">—</dd></div>
+          <div><dt>Taxa rápida / econômica</dt><dd id="net-fees">—</dd></div>
+          <div><dt>Mempool</dt><dd id="net-mempool">—</dd></div>
+          <div><dt>Halving</dt><dd id="net-halving">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="card span-2" id="card-valuation">
+        <header class="card-head">
+          <h3>Valuation on-chain</h3>
+          <div class="card-meta" data-meta="valuation"></div>
+        </header>
+        <div class="hero-row">
+          <div>
+            <div class="hero" id="val-mvrv">—</div>
+            <div class="sub muted">MVRV</div>
+          </div>
+          <dl class="kv">
+            <div><dt>NUPL</dt><dd id="val-nupl">—</dd></div>
+            <div><dt>Valor realizado</dt><dd id="val-realized">—</dd></div>
+            <div><dt>Valor de mercado</dt><dd id="val-mcap">—</dd></div>
+            <div><dt>Faixa do MVRV em 1 ano</dt><dd id="val-range">—</dd></div>
+          </dl>
+        </div>
+        <div class="chart chart-short"><canvas id="mvrv-chart" aria-label="MVRV diário, 1 ano"></canvas></div>
+        <p class="note">MVRV = valor de mercado ÷ valor realizado (preço médio em que cada moeda se moveu pela última vez). NUPL = 1 − 1/MVRV: fração do valor de mercado em lucro não realizado.</p>
+      </section>
+
+      <section class="card" id="card-activity">
+        <header class="card-head">
+          <h3>Atividade</h3>
+          <div class="card-meta" data-meta="activity"></div>
+        </header>
+        <div class="hero" id="act-addr">—</div>
+        <div class="sub"><span class="muted">endereços ativos (média 7d)</span> <span id="act-addr-trend" class="delta">—</span></div>
+        <dl class="kv kv-grid">
+          <div><dt>Transações / dia (7d)</dt><dd id="act-tx">—</dd></div>
+          <div><dt>Taxas / dia (7d)</dt><dd id="act-fees">—</dd></div>
+          <div><dt>Oferta em circulação</dt><dd id="act-supply">—</dd></div>
+          <div><dt>Dado de</dt><dd id="act-date">—</dd></div>
+        </dl>
+        <p class="note">Variação: média de 7 dias contra a de 30 dias. Coin Metrics publica com um dia de defasagem.</p>
+      </section>
+    </div>
+
+    <!-- Macro ------------------------------------------------------------------------------->
+    <h2 class="section-title" id="sec-macro">Macro</h2>
+    <div class="grid">
+      <section class="card span-4" id="card-macro">
+        <header class="card-head">
+          <h3>Macro (EUA)</h3>
+          <div class="card-meta" data-meta="macro"></div>
+        </header>
+        <div id="macro-error" class="alert" hidden></div>
+        <div class="macro-layout">
+          <table class="table" aria-label="Indicadores macro">
+            <thead><tr><th>Série</th><th class="num">Último</th><th class="num">Var.</th><th>Data</th></tr></thead>
+            <tbody id="macro-table"></tbody>
+          </table>
+          <div>
+            <h4 class="mini-title">Juros dos Treasuries — 1 ano</h4>
+            <div class="chart">
+              <canvas id="yields-chart" aria-label="Juros de 2 e 10 anos"></canvas>
+              <div class="empty" id="yields-empty" hidden>Sem dados do FRED ainda.</div>
+            </div>
+            <div class="muted small">Spread 10a−2a: <b id="spread-2s10s">—</b></div>
+          </div>
+          <div>
+            <h4 class="mini-title">Agenda (próximos 45 dias)</h4>
+            <ul class="releases" id="releases"></ul>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Notícias ---------------------------------------------------------------------------->
+    <h2 class="section-title" id="sec-noticias">Notícias</h2>
+    <div class="grid">
+      <section class="card span-4" id="card-news">
+        <header class="card-head">
+          <h3>BTC, ETFs e macro</h3>
+          <div class="card-meta" data-meta="news"></div>
+        </header>
+        <ul class="news" id="news-list"></ul>
+        <p class="note" id="news-feeds"></p>
+      </section>
+    </div>
   </main>
 
   <footer class="disclaimer">Ferramenta informativa. Não é recomendação de investimento.</footer>
