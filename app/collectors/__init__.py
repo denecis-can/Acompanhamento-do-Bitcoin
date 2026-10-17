@@ -10,6 +10,7 @@ from app.collectors.bybit import BybitCollector
 from app.collectors.coinbase import CoinbaseCollector
 from app.collectors.deribit import DeribitCollector
 from app.collectors.deribit_options import DeribitOptionsCollector
+from app.collectors.farside import FarsideCollector
 from app.collectors.fear_greed import FearGreedCollector
 from app.collectors.fred import FredCollector
 from app.collectors.mempool import MempoolCollector
@@ -32,6 +33,7 @@ def build_collectors(http: HttpClient, s: Settings) -> list[BaseCollector]:
         DeribitOptionsCollector(http, s.interval_volatility),
         FearGreedCollector(http, s.interval_sentiment),
         FredCollector(http, s.interval_macro, api_key=s.fred_api_key),
+        FarsideCollector(http, s.interval_etf),
         StablecoinsCollector(http, s.interval_stablecoins),
         MempoolCollector(http, s.interval_mempool),
         CoinMetricsCollector(http, s.interval_onchain),

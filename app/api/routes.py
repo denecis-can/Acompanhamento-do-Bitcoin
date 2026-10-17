@@ -26,6 +26,7 @@ ALLOWED_SERIES = {
     "bybit.oi_usd",
     "okx.funding_rate",
     "okx.oi_usd",
+    "etf.flow_total",
     "stables.total_usd",
     "mempool.hashrate_ehs",
     "cm.mvrv",

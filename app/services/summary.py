@@ -162,7 +162,8 @@ def build_summary(
     options = _section(sources, "deribit_options", {k: v for k, v in opt.items() if k != "basis"} if opt else None)
     basis = _section(sources, "deribit_options", opt["basis"] if opt else None, source="Deribit Futures")
 
-    # --- fluxos: stablecoins ------------------------------------------------
+    # --- fluxos: ETFs à vista e stablecoins ---------------------------------
+    etf = _section(sources, "farside", data("farside"))
     stablecoins = _section(sources, "stablecoins", data("stablecoins"))
 
     # --- on-chain -------------------------------------------------------------
@@ -203,6 +204,7 @@ def build_summary(
         "trend": trend,
         "options": options,
         "basis": basis,
+        "etf": etf,
         "stablecoins": stablecoins,
         "onchain": onchain,
         "sentiment": sentiment,
