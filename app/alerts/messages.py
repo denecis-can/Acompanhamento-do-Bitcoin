@@ -125,7 +125,7 @@ def daily_message(summary: dict[str, Any], alerts: list[dict], now: float, tz: Z
     def g(path: str) -> Any:
         return get_path(summary, path)
 
-    lines = [("[DEMO] " if demo else "") + f"<b>Resumo diário — BTC</b> · {datetime.fromtimestamp(now, tz=tz).strftime('%d/%m/%Y')}", ""]
+    lines = [("[DEMO] " if demo else "") + f"<b>Acompanhamento do Bitcoin — resumo diário</b> · {datetime.fromtimestamp(now, tz=tz).strftime('%d/%m/%Y')}", ""]
 
     regime = summary.get("regime") or {}
     if regime.get("score") is not None:

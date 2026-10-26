@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="BTC Dashboard API",
+    title="Acompanhamento do Bitcoin — API",
     description="Snapshot consolidado do mercado de Bitcoin a partir de APIs públicas.",
     version="0.1.0",
     lifespan=lifespan,

@@ -1,4 +1,4 @@
-// BTC Dashboard — front. Fala apenas com o backend (/api/*), nunca com APIs externas.
+// Acompanhamento do Bitcoin — front. Fala apenas com o backend (/api/*), nunca com APIs externas.
 "use strict";
 
 const REFRESH_SUMMARY_MS = 30_000;
@@ -315,7 +315,7 @@ function renderPrice(p) {
   setText("price-high", fmt.usd(p.high_24h));
   setText("price-low", fmt.usd(p.low_24h));
   setText("price-volume", fmt.compactUsd(p.volume_usd_24h));
-  if (p.value) document.title = `${fmt.usd(p.value)} · BTC Dashboard`;
+  if (p.value) document.title = `${fmt.usd(p.value)} · Acompanhamento do Bitcoin`;
 }
 
 function renderPremium(pr, sources) {

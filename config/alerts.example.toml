@@ -1,5 +1,5 @@
 # =============================================================================
-# Regras de alerta do BTC Dashboard — exemplo comentado
+# Regras de alerta do Acompanhamento do Bitcoin — exemplo comentado
 #
 # O arquivo usado de verdade é config/alerts.toml (ou o caminho em ALERTS_FILE no .env).
 # Edite à mão; as mudanças valem no próximo reinício do servidor. Este arquivo não tem

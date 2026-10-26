@@ -60,7 +60,7 @@ async def test_daily_summary_content_and_delivery(http, db):
     event = await svc.send_daily_summary(now=NOW, summary=market_summary())
 
     text = json.loads(tg.calls[0].request.content)["text"]
-    assert "<b>Resumo diário — BTC</b> · 18/10/2026" in text
+    assert "<b>Acompanhamento do Bitcoin — resumo diário</b> · 18/10/2026" in text
     assert "Temperatura do mercado: <b>" in text and "• Mayer Multiple: 1,03× (nota" in text
     assert "Sem dados:" in text                                   # componentes ausentes ficam explícitos
     assert "Preço: <b>US$ 81.574</b> (−0,89% em 24h)" in text

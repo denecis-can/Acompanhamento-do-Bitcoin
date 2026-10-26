@@ -44,7 +44,7 @@ async def main(command: str) -> int:
             return 1
         if command == "teste":
             now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            text = "<b>BTC Dashboard</b>\nMensagem de teste: o canal está configurado."
+            text = "<b>Acompanhamento do Bitcoin</b>\nMensagem de teste: o canal está configurado."
             payload = {"schema": "btc-dashboard.alert.v1", "type": "test", "sent_at": now, "message": "Mensagem de teste"}
             deliveries, status = await service.deliver(Message(text, payload), tuple(service.channels))
         else:

@@ -1,4 +1,4 @@
-# BTC Dashboard
+# Acompanhamento do Bitcoin
 
 Painel de monitoramento do Bitcoin em tempo quase real que junta, em uma tela, os indicadores que traders profissionais acompanham: preço, derivativos, opções, fluxos de ETFs e stablecoins, on-chain, sentimento, macro e notícias, com uma faixa de resumo ("temperatura do mercado") no topo. Usa só APIs públicas e gratuitas, integradas diretamente em Python, sem ferramentas no-code.
 
@@ -220,7 +220,7 @@ A cada 60 s o servidor avalia as regras de `config/alerts.toml` contra o `/api/s
 ### Criar o bot no Telegram e descobrir o seu chat_id
 
 1. No Telegram, abra **@BotFather**. Confira que é a conta oficial, com selo de verificação.
-2. Envie `/newbot`. Escolha um nome (ex.: `BTC Dashboard`) e um username terminado em `bot` (ex.: `meu_btc_dash_bot`).
+2. Envie `/newbot`. Escolha um nome (ex.: `Acompanhamento do Bitcoin`) e um username terminado em `bot` (ex.: `meu_btc_dash_bot`).
 3. O BotFather responde com o **token**, no formato `123456789:AA...`. Copie para o `.env`:
    `TELEGRAM_BOT_TOKEN=123456789:AA...`
    Trate o token como senha. Se vazar, use `/revoke` no BotFather para gerar outro.
